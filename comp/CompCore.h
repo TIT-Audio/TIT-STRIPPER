@@ -84,7 +84,7 @@ inline void constrain (Settings& s) noexcept
     }
 }
 
-// Traduce los mandos propios de cada original a umbral interno (dBFS) y ganancia de salida (medido en un DAW con los plugins originales)
+// Traduce los mandos propios de cada original a umbral interno (dBFS) y ganancia de salida (medido en un DAW con los originales)
 inline void derive (Settings& s) noexcept
 {
     s.makeupDb = s.outParam;
