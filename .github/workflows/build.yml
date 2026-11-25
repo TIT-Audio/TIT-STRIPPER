@@ -1,0 +1,129 @@
+name: Build TIT STRIPPER (VST3)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Pruebas de los nucleos (sin JUCE): compresor, ecualizador y gate
+  tests:
+    name: tests (core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: g++ -std=c++17 -O1 -Wall tests/comp_core_test.cpp -o comp_test && ./comp_test
+      - run: g++ -std=c++17 -O1 -Wall tests/eq_test.cpp -o eq_test && ./eq_test
+      - run: g++ -std=c++17 -O1 -Wall tests/gate_test.cpp -o gate_test && ./gate_test
+
+  build:
+    name: build (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: windows,   os: windows-latest }
+          - { id: mac-arm,   os: macos-latest }
+          # Segunda máquina macOS (Intel): tiene su propia cola. Compila igualmente universal (arm64 + x86_64).
+          # Si GitHub no da máquina a una de las dos, la otra sirve; el paquete final usa la que termine.
+          - { id: mac-intel, os: macos-15-intel }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    # un fallo de macOS (p. ej. falta de máquinas de GitHub) no tumba el resto del flujo
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -B build -A x64
+
+      - name: Configure (macOS universal arm64 + x86_64)
+        if: runner.os == 'macOS'
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+
+      - name: Build VST3
+        run: cmake --build build --config Release --target TITSTRIPPER_VST3 --parallel
+
+      - name: Build AU (Logic Pro, solo macOS)
+        if: runner.os == 'macOS'
+        run: cmake --build build --config Release --target TITSTRIPPER_AU --parallel
+
+      # Validador de plugins (solo informa: un fallo aqui no tumba el build)
+      - name: pluginval (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
+          Expand-Archive pv.zip pv
+          $v = Get-ChildItem -Path build -Recurse -Directory -Filter "*.vst3" | Select-Object -First 1
+          .\pv\pluginval.exe --strictness-level 5 --validate-in-process --timeout-ms 120000 $v.FullName
+
+      - name: pluginval (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          curl -L https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip -o pv.zip
+          unzip -q pv.zip -d pv
+          v=$(find build -type d -name "*.vst3" | head -1)
+          ./pv/pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate-in-process --timeout-ms 120000 "$v"
+
+      - name: Zip VST3 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = Get-ChildItem -Path build -Recurse -Directory -Filter "*.vst3" | Select-Object -First 1
+          Compress-Archive -Path $v.FullName -DestinationPath "TITSTRIPPER-Windows-VST3.zip"
+
+      - name: Zip VST3 + AU (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          v=$(find build -type d -name "*.vst3" | head -1)
+          (cd "$(dirname "$v")" && zip -r -y "$GITHUB_WORKSPACE/TITSTRIPPER-macOS-VST3-${{ matrix.id }}.zip" "$(basename "$v")")
+          a=$(find build -type d -name "*.component" | head -1)
+          (cd "$(dirname "$a")" && zip -r -y "$GITHUB_WORKSPACE/TITSTRIPPER-macOS-AU-Logic-${{ matrix.id }}.zip" "$(basename "$a")")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.id }}
+          path: TITSTRIPPER-*.zip
+
+  # Junta todo en UN solo artefacto / carpeta: Windows + macOS + código fuente
+  package:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zip-*
+          path: TITSTRIPPER
+          merge-multiple: true
+      - name: Quedarse con un solo zip de macOS por formato
+        shell: bash
+        run: |
+          cd TITSTRIPPER
+          for k in VST3 AU-Logic; do
+            files=(TITSTRIPPER-macOS-$k-*.zip)
+            if [ -e "${files[0]}" ]; then
+              mv "${files[0]}" "TITSTRIPPER-macOS-$k.zip"
+              rm -f TITSTRIPPER-macOS-$k-*.zip
+            fi
+          done
+          ls -la
+      - name: Source zip
+        run: git archive --format=zip --prefix=TITSTRIPPER/ -o TITSTRIPPER/TITSTRIPPER-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TITSTRIPPER-all
+          path: TITSTRIPPER/
+      - name: Publish release (solo con tag, p. ej. v0.1.0)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TITSTRIPPER/*.zip
