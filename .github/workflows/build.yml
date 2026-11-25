@@ -52,7 +52,7 @@ jobs:
       - name: Build VST3
         run: cmake --build build --config Release --target TITSTRIPPER_VST3 --parallel
 
-      - name: Build AU (Logic Pro, solo macOS)
+      - name: Build AU (solo macOS)
         if: runner.os == 'macOS'
         run: cmake --build build --config Release --target TITSTRIPPER_AU --parallel
 
