@@ -1,6 +1,6 @@
 // Pruebas automaticas del ecualizador (sin JUCE): estabilidad, ganancia en la frecuencia central y
 // coherencia entre frecuencias de muestreo (44.1 / 48 / 96 / 192 kHz).
-#include "../EqBand.h"
+#include "../common/EqBand.h"
 #include <cstdio>
 #include <cmath>
 #include <vector>
