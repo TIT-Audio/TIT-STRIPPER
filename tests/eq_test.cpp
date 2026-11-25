@@ -1,6 +1,6 @@
 // Pruebas automaticas del ecualizador (sin JUCE): estabilidad, ganancia en la frecuencia central y
 // coherencia entre frecuencias de muestreo (44.1 / 48 / 96 / 192 kHz).
-#include "../common/EqBand.h"
+#include "../EqBand.h"
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -53,6 +53,23 @@ int main()
                 if (d > 0.3) std::printf ("AVISO: tipo %d a %.0f Hz con fs %.0f se desvia %.2f dB de 192 kHz\n", type, f[k], fs, d);
                 check (d < 1.0, "respuesta muy distinta segun fs", type, fs, eq.magnitudeDb (f[k], fs), ref[k]);
             }
+        }
+    }
+    // BOOBTEC contra el ecualizador pasivo de referencia medido en un DAW (ruido blanco, 48 kHz): { selector, boost, atten, Hz, dB medidos }
+    {
+        struct M { double cps, b, a, f, db; };
+        const M pts[] = {
+            { 20, 10, 0, 20, 11.2 }, { 20, 10, 0, 100, 2.3 }, { 20, 0, 10, 20, -16.8 }, { 20, 0, 10, 100, -6.5 },
+            { 20, 10, 10, 20, 9.8 }, { 20, 10, 10, 100, -5.8 }, { 20, 10, 10, 150, -6.4 },
+            { 60, 10, 0, 20, 16.0 }, { 60, 10, 0, 200, 6.3 }, { 60, 0, 10, 100, -16.0 }, { 60, 0, 10, 500, -5.3 },
+            { 60, 10, 10, 500, -6.5 }, { 60, 10, 10, 200, 3.1 },
+            { 100, 10, 0, 100, 13.3 }, { 100, 10, 0, 1000, 1.4 }, { 100, 0, 10, 1000, -4.6 }, { 100, 10, 10, 1000, -6.9 }, { 100, 10, 10, 200, 7.6 } };
+        for (const auto& p : pts)
+        {
+            titq::BandSettings st; st.type = titq::BOOBTEC; st.freq = (float) p.cps; st.boost = (float) p.b; st.atten = (float) p.a;
+            titq::EqBand eq; eq.design (st, 48000.0, 1.0);
+            const double got = eq.magnitudeDb (p.f, 48000.0);
+            check (std::abs (got - p.db) < 1.2, "BOOBTEC lejos del ecualizador de referencia medido", titq::BOOBTEC, 48000.0, got, p.db);
         }
     }
     if (failures == 0) std::printf ("Todas las pruebas del ecualizador han pasado.\n");

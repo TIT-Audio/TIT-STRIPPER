@@ -127,7 +127,7 @@ inline void derive (Settings& s) noexcept
             s.thr = shift - s.muTrim;
             s.makeupDb = s.muMk; break;   // medido (Thresh al minimo): Input Trim +/-24 no cambia el nivel de salida, solo la cantidad de compresion
         }
-        case DXX:   // compresor VCA RMS de referencia medido: Threshold en dBFS directo (knob .01..3 V: -58.3..-8.7 dBFS, 1 = -18.26); Output Gain -20..+20
+        case DXX:   // compresor VCA de referencia medido: Threshold en dBFS directo (knob .01..3 V: -58.3..-8.7 dBFS, 1 = -18.26); Output Gain -20..+20
             s.makeupDb = std::clamp (s.outParam, -20.0, 20.0); break;
         default: break;
     }

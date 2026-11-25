@@ -18,8 +18,14 @@ constexpr double kBigTitQ     = 0.197;   // Q fija de BIGTIT
 constexpr double kTitSkyQ     = 0.475;   // Q del high shelf TIT SKY (12 dB/oct), medida con la banda AIR en 40k
 constexpr double kTitSkyStartHz = 9107.48; // frecuencia de partida de TIT SKY al elegir ese tipo
 constexpr double kBoobtecStartHz = 10.3;   // frecuencia de partida de BOOBTEC al elegir ese tipo
-constexpr double kBoobtecAttQ  = 0.448;   // Q de la campana del atten de BOOBTEC
-constexpr double kBoobtecDbPerStep = 1.6; // mando 0..10  ->  0..16 dB
+// BOOBTEC: medido en un DAW contra un ecualizador pasivo de referencia (ruido blanco, función de transferencia).
+//  - BOOB (boost): low shelf de Q 0.445 y 16.6 dB con el mando a 10; su frecuencia central sube al bajar el mando.
+//  - ATTIT (atten): low shelf hacia abajo (Q 0.43, -20.4 dB a 10) que parte de la zona de la campana del boost.
+//  - Con boost y atten a la vez, el atten deja de ser shelf y pasa a ser una campana (Q 0.73, -8.4 dB) que hunde por encima del boost.
+constexpr double kBoobtecDbPerStep    = 1.66;  // mando BOOB 0..10 -> 0..16.6 dB
+constexpr double kBoobtecAttDbPerStep = 2.04;  // mando ATTIT 0..10 -> 0..-20.4 dB
+constexpr double kBoobtecBoostQ = 0.445, kBoobtecAttQ = 0.43, kBoobtecBellQ = 0.73;
+constexpr double kBoobtecFreqExp = 1.4;        // la frecuencia del shelf sube como 10^(exp*(dB de menos)/40)
 
 struct BandSettings
 {
@@ -221,17 +227,42 @@ public:
 
             case BOOBTEC:
             {
-                static const double xs[4]    = { 20.0, 30.0, 60.0, 100.0 };
-                static const double reach[4] = { 700.0, 1000.0, 2000.0, 4000.0 };
-                static const double att[4]   = { 300.0, 500.0, 1400.0, 2000.0 };
-                const double fr = std::clamp (loglogInterp (f, xs, reach, 4), f * 1.5, nyq);
-                const double fa = std::clamp (loglogInterp (f, xs, att, 4), 20.0, nyq);
-                const double bst = (double) s.boost * kBoobtecDbPerStep * dyn;
-                const double atn = (double) s.atten * kBoobtecDbPerStep * dyn;
-                // el shelf de boost llega hasta 'fr': centro geométrico entre f y fr, Q suave
-                if (bst > 0.0) add (Biquad::lowShelf (fs, std::sqrt (f * fr), 0.5, bst));
-                // el atten hunde una campana ancha en 'fa'
-                if (atn > 0.0) add (Biquad::peak (fs, fa, kBoobtecAttQ, -atn));
+                // anclas medidas en las 4 posiciones del selector (20, 30, 60, 100 Hz)
+                static const double xs[4]     = { 20.0, 30.0, 60.0, 100.0 };
+                static const double fBoost[4] = { 32.33, 76.99, 145.84, 239.56 };   // centro del shelf de boost a 10
+                static const double fAtt[4]   = { 59.6, 102.4, 247.4, 436.6 };      // centro del shelf de atten a 10
+                static const double fBell[4]  = { 120.2, 237.2, 506.3, 862.6 };     // centro de la campana (boost + atten)
+                static const double gBell[4]  = { -8.3, -7.3, -8.4, -8.7 };         // profundidad de la campana a 10
+                const double fi = std::clamp (f, 10.0, 200.0);
+                const double bn = std::clamp ((double) s.boost * dyn / 10.0, 0.0, 1.0);
+                const double an = std::clamp ((double) s.atten * dyn / 10.0, 0.0, 1.0);
+                const double gB10 = 10.0 * kBoobtecDbPerStep, gA10 = 10.0 * kBoobtecAttDbPerStep;
+                auto lowerFreq = [] (double f10, double g, double g10) { return f10 * std::pow (10.0, kBoobtecFreqExp * (g10 - g) / 40.0); };
+                const double b10 = loglogInterp (fi, xs, fBoost, 4), a10 = loglogInterp (fi, xs, fAtt, 4);
+                const double l10 = loglogInterp (fi, xs, fBell, 4);
+                double bell10 = gBell[3];
+                if (fi <= xs[0]) bell10 = gBell[0];
+                else for (int i = 0; i < 3; ++i)
+                    if (fi <= xs[i + 1]) { const double t = std::log (fi / xs[i]) / std::log (xs[i + 1] / xs[i]); bell10 = gBell[i] + t * (gBell[i + 1] - gBell[i]); break; }
+
+                if (bn > 0.0)
+                {
+                    const double g = bn * gB10;
+                    add (Biquad::lowShelf (fs, std::clamp (lowerFreq (b10, g, gB10), 5.0, nyq), kBoobtecBoostQ, g));
+                }
+                if (an > 0.0)
+                {
+                    // sin boost: shelf hacia abajo; con boost el atten se convierte en campana (mezcla continua)
+                    const double w = bn > 0.0 ? 1.0 - std::pow (1.0 - bn, 1.4) : 0.0;
+                    const double g = an * gA10;
+                    if (w < 0.999)
+                        add (Biquad::lowShelf (fs, std::clamp (lowerFreq (a10, g, gA10), 5.0, nyq), kBoobtecAttQ, -g * (1.0 - w)));
+                    if (w > 0.001)
+                    {
+                        const double fb = l10 * (1.0 + 0.47 * (1.0 - an));
+                        add (Biquad::peak (fs, std::clamp (fb, 5.0, nyq), kBoobtecBellQ, bell10 * std::pow (an, 0.5) * w));
+                    }
+                }
                 break;
             }
             default: break;

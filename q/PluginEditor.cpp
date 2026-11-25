@@ -821,7 +821,7 @@ juce::Point<float> TitQEditor::nodePosition (int b) const
 {
     const auto s = proc.readBandSettings (b);
     float db = 0.f;
-    if (s.type == BOOBTEC)                     db = (s.boost - s.atten) * (float) kBoobtecDbPerStep;
+    if (s.type == BOOBTEC)                     db = s.boost * (float) kBoobtecDbPerStep - s.atten * (float) kBoobtecAttDbPerStep;
     else if (nodeIsDraggableInGain (s.type))  db = s.gain;
     return { freqToX (s.freq), dbToY (db) };
 }
