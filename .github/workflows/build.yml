@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Pruebas de los nucleos (sin JUCE): compresor, ecualizador y gate
   tests:
@@ -85,7 +89,7 @@ jobs:
           v=$(find build -type d -name "*.vst3" | head -1)
           (cd "$(dirname "$v")" && zip -r -y "$GITHUB_WORKSPACE/TITSTRIPPER-macOS-VST3-${{ matrix.id }}.zip" "$(basename "$v")")
           a=$(find build -type d -name "*.component" | head -1)
-          (cd "$(dirname "$a")" && zip -r -y "$GITHUB_WORKSPACE/TITSTRIPPER-macOS-AU-Logic-${{ matrix.id }}.zip" "$(basename "$a")")
+          (cd "$(dirname "$a")" && zip -r -y "$GITHUB_WORKSPACE/TITSTRIPPER-macOS-AU-${{ matrix.id }}.zip" "$(basename "$a")")
 
       - uses: actions/upload-artifact@v4
         with:
@@ -108,7 +112,7 @@ jobs:
         shell: bash
         run: |
           cd TITSTRIPPER
-          for k in VST3 AU-Logic; do
+          for k in VST3 AU; do
             files=(TITSTRIPPER-macOS-$k-*.zip)
             if [ -e "${files[0]}" ]; then
               mv "${files[0]}" "TITSTRIPPER-macOS-$k.zip"
