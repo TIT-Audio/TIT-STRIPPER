@@ -54,6 +54,25 @@ int main()
         }
         check (first == 10 + g.latencySamples() && g.latencySamples() == 96, "lookahead 2 ms = 96 muestras", first, 106);
     }
+    // EQ del sidechain: un tono grave por debajo del umbral abre el gate solo si el EQ lo realza
+    {
+        auto run = [] (bool eq)
+        {
+            titg::Gate g; g.prepare (48000.0); titg::Settings t; t.thr = -40; t.range = 60; t.hpHz = 20; t.eqOn = eq;
+            t.eqF[0] = 300.0; t.eqG[0] = 18.0; g.setSettings (t);
+            double pk = 0;
+            for (int i = 0; i < 48000; ++i)
+            {
+                const float v = 0.00316f * (float) std::sin (6.283185307 * 80.0 * i / 48000.0);
+                const float x[2] { v, v }; float y[2], k[2];
+                g.process (x, x, 2, y, k);
+                if (i > 36000) pk = std::max (pk, (double) std::fabs (y[0]));
+            }
+            return 20.0 * std::log10 (pk + 1e-9);
+        };
+        const double off = run (false), on = run (true);
+        check (off < -90.0 && on > -55.0, "EQ sidechain: el realce abre el gate", off, on);
+    }
     if (failures == 0) std::printf ("Todas las pruebas del gate han pasado.\n");
     return failures != 0;
 }

@@ -43,6 +43,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (makeFloat ("schp",    "SC High-pass",  20.f, 2000.f,  20.f, 200.f, "Hz",   2));
     layout.add (makeFloat ("sclp",    "SC Low-pass",  200.f, 20000.f, 20000.f, 3000.f, "Hz", 2));
     layout.add (makeFloat ("link",    "Stereo Link",    0.f, 100.f,  100.f, 0.f,   "%",    3, 1.f));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sceq", 1 }, "SC EQ On", false));
+    {
+        const char* nm[3] = { "Low", "Mid", "High" };
+        const float df[3] = { 100.f, 1000.f, 6000.f }, dq[3] = { 0.7f, 1.0f, 0.7f };
+        for (int i = 0; i < 3; ++i)
+        {
+            const juce::String n (nm[i]), k (i + 1);
+            layout.add (makeFloat ("ef" + k, "SC EQ " + n + " Freq", 20.f, 20000.f, df[i], i == 0 ? 100.f : i == 1 ? 1000.f : 6000.f, "Hz", 2));
+            layout.add (makeFloat ("eg" + k, "SC EQ " + n + " Gain", -18.f, 18.f, 0.f, 0.f, "dB", 3, 0.1f));
+            layout.add (makeFloat ("eq" + k, "SC EQ " + n + " Q", 0.2f, 8.f, dq[i], 1.f, "", 3, 0.01f));
+        }
+    }
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "scsrc", 1 }, "Sidechain Source",
                 juce::StringArray { "Internal", "External" }, 0));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sclisten", 1 }, "SC Listen", false));
@@ -68,6 +80,12 @@ titg::Settings GateProcessor::readSettings() const
     s.attackMs = P (apvts, "attack"); s.holdMs = P (apvts, "hold");  s.releaseMs = P (apvts, "release");
     s.hystDb = P (apvts, "hyst");    s.lookMs = P (apvts, "look");
     s.hpHz = P (apvts, "schp");      s.lpHz = P (apvts, "sclp");     s.link = P (apvts, "link") * 0.01;
+    s.eqOn = P (apvts, "sceq") > 0.5f;
+    for (int i = 0; i < 3; ++i)
+    {
+        const juce::String k (i + 1);
+        s.eqF[i] = P (apvts, ("ef" + k).toRawUTF8()); s.eqG[i] = P (apvts, ("eg" + k).toRawUTF8()); s.eqQ[i] = P (apvts, ("eq" + k).toRawUTF8());
+    }
     return s;
 }
 

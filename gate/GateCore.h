@@ -22,6 +22,10 @@ struct Settings
     double hpHz = 20.0;        // filtros de la senal de deteccion
     double lpHz = 20000.0;
     double link = 1.0;         // 0..1 enlace estereo
+    bool   eqOn = false;       // EQ de 3 bandas en la senal de deteccion (low shelf, campana, high shelf)
+    double eqF[3] { 100.0, 1000.0, 6000.0 };
+    double eqG[3] { 0.0, 0.0, 0.0 };
+    double eqQ[3] { 0.7, 1.0, 0.7 };
 };
 
 constexpr double kDetDecayMs = 10.0;   // caida del detector de pico
@@ -53,12 +57,24 @@ public:
         for (int c = 0; c < kMaxCh; ++c) { env[c] = 0.0; gr[c] = s.range; open[c] = false; holdLeft[c] = 0; }
         hp[0].reset(); hp[1].reset(); lp[0].reset(); lp[1].reset();
         lastHp = lastLp = -1.0;
+        for (auto& b : eqb) b.reset();
+        lastEq[0] = -1.0;
     }
     void setSettings (const Settings& n) noexcept
     {
         s = n;
         if (s.hpHz != lastHp) { hp[0].set (titq::Biquad::highpass (fs, std::clamp (s.hpHz, 10.0, 0.45 * fs), 0.7071)); hp[1].c = hp[0].c; lastHp = s.hpHz; }
         if (s.lpHz != lastLp) { lp[0].set (titq::Biquad::lowpass  (fs, std::clamp (s.lpHz, 100.0, 0.45 * fs), 0.7071)); lp[1].c = lp[0].c; lastLp = s.lpHz; }
+        for (int i = 0; i < 3; ++i)
+        {
+            const double key = s.eqF[i] * 1000.0 + s.eqG[i] * 7.0 + s.eqQ[i] * 13.0 + i;
+            if (key == lastEq[i] ) continue;
+            lastEq[i] = key;
+            const double f = std::clamp (s.eqF[i], 20.0, 0.45 * fs), q = std::max (0.1, s.eqQ[i]);
+            eqb[i].set (i == 0 ? titq::Biquad::lowShelf (fs, f, q, s.eqG[i])
+                      : i == 1 ? titq::Biquad::peak (fs, f, q, s.eqG[i])
+                               : titq::Biquad::highShelf (fs, f, q, s.eqG[i]));
+        }
         aD = std::exp (-1.0 / (kDetDecayMs * 0.001 * fs));
         aA = std::exp (-1.0 / (std::max (0.01, s.attackMs) * 0.001 * fs));
         aR = std::exp (-1.0 / (std::max (1.0, s.releaseMs) * 0.001 * fs));
@@ -77,6 +93,7 @@ public:
             float k = key[c];
             hp[c].process (&k, 1, 0);   // un filtro por canal (estado z[0] de cada instancia)
             lp[c].process (&k, 1, 0);
+            if (s.eqOn) for (auto& b : eqb) b.process (&k, 1, c);
             keyOut[c] = k;
             const double a = std::fabs ((double) k);
             env[c] = a > env[c] ? a : aD * env[c] + (1.0 - aD) * a;
@@ -113,7 +130,8 @@ private:
     double env[kMaxCh] {}, gr[kMaxCh] {};
     bool open[kMaxCh] {};
     int holdLeft[kMaxCh] {};
-    titq::Biquad hp[kMaxCh], lp[kMaxCh];
+    titq::Biquad hp[kMaxCh], lp[kMaxCh], eqb[3];
+    double lastEq[3] { -1.0, -1.0, -1.0 };
     std::vector<float> delay[kMaxCh];
 };
 } // namespace titg

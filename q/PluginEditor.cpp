@@ -415,7 +415,8 @@ TitQEditor::TitQEditor (TitQProcessor& p) : AudioProcessorEditor (&p), proc (p)
     typeBox.addItemList (typeNames(), 1);
     scSrcBox.addItemList (juce::StringArray { "SC: Internal", "SC: External" }, 1);
     dirBox.addItemList (juce::StringArray { "Above threshold", "Below threshold" }, 1);
-    chBox.addItemList (juce::StringArray { "Stereo (L+R)", "Mid", "Side", "Left only", "Right only" }, 1);
+    chBox.addItemList (juce::StringArray { "ST", "M", "S", "L", "R" }, 1);
+    chBox.setTooltip ("Channel mode: ST = stereo, M = mid, S = side, L = left only, R = right only");
     addAndMakeVisible (chBox);
     addAndMakeVisible (typeBox); addAndMakeVisible (onBtn); addAndMakeVisible (soloBtn); addAndMakeVisible (dynBtn);
     addAndMakeVisible (scSrcBox); addAndMakeVisible (dirBox); addAndMakeVisible (freeBtn);
@@ -572,7 +573,15 @@ void TitQEditor::showPresetMenu()
 
 void TitQEditor::openSettings()
 {
-    juce::CallOutBox::launchAsynchronously (std::make_unique<SettingsPanel> (proc), settingsBtn.getBounds(), this);
+    // El panel mide 640 de alto: va dentro de un Viewport con scroll y limitado a la altura de la ventana
+    auto vp = std::make_unique<juce::Viewport>();
+    vp->setViewedComponent (new SettingsPanel (proc), true);
+    vp->setScrollBarsShown (true, false);
+    auto* top = getTopLevelComponent();
+    const int avail = juce::jmax (200, (top != nullptr ? top->getHeight() : getHeight()) - 90);
+    const int h = juce::jmin (640, avail);
+    vp->setSize (640 + (h < 640 ? vp->getScrollBarThickness() : 0), h);
+    juce::CallOutBox::launchAsynchronously (std::move (vp), (top != nullptr ? top : this)->getLocalArea (this, settingsBtn.getBounds()), top != nullptr ? top : this);
 }
 
 void TitQEditor::selectBand (int b)
@@ -1274,7 +1283,7 @@ void TitQEditor::resized()
         bandButtons[(size_t) i].setBounds (S (44 + i * 46), S (304), S (42), S (26));
     typeBox.setBounds (S (520), S (304), S (120), S (26));
     onBtn.setBounds   (S (652), S (304), S (56),  S (26));
-    chBox.setBounds   (S (716), S (304), S (150), S (26));
+    chBox.setBounds   (S (970), S (304), S (64),  S (26));
     soloBtn.setBounds (S (712), S (304), S (62),  S (26));
     dynBtn.setBounds  (S (780), S (304), S (90),  S (26));
     deleteBtn.setBounds (S (880), S (304), S (80), S (26));

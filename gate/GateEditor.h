@@ -39,10 +39,12 @@ private:
     juce::Image background;
     double scale = 1.0;
 
-    static constexpr int kNumKnobs = 11;
+    static constexpr int kNumKnobs = 20;
     std::array<Knob, kNumKnobs> knobs;
     juce::ComboBox scSrcBox;
     juce::ToggleButton listenBtn { "SC Listen" };
+    juce::ToggleButton scEqBtn { "SC EQ On" };
+    std::unique_ptr<ButtonAtt> scEqAtt;
     juce::Label scWarn;
     std::unique_ptr<ComboAtt> scSrcAtt;
     std::unique_ptr<ButtonAtt> listenAtt;

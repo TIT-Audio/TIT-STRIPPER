@@ -3,8 +3,10 @@
 
 static const juce::Colour kPink  (0xffff2e9a);
 static const juce::Colour kPink2 (0xffff7ac0);
-static const char* kIds[]   = { "thr", "range", "ratio", "attack", "hold", "release", "hyst", "look", "schp", "sclp", "link" };
-static const char* kNames[] = { "Threshold", "Range", "Ratio", "Attack", "Hold", "Release", "Hysteresis", "Lookahead", "SC High-pass", "SC Low-pass", "Stereo Link" };
+static const char* kIds[]   = { "thr", "range", "ratio", "attack", "hold", "release", "hyst", "look", "schp", "sclp", "link",
+                              "ef1", "eg1", "eq1", "ef2", "eg2", "eq2", "ef3", "eg3", "eq3" };
+static const char* kNames[] = { "Threshold", "Range", "Ratio", "Attack", "Hold", "Release", "Hysteresis", "Lookahead", "SC High-pass", "SC Low-pass", "Stereo Link",
+                              "Low Freq", "Low Gain", "Low Q", "Mid Freq", "Mid Gain", "Mid Q", "High Freq", "High Gain", "High Q" };
 
 void GateEditor::Laf::drawLabel (juce::Graphics& g, juce::Label& l)
 {
@@ -81,6 +83,8 @@ GateEditor::GateEditor (GateProcessor& p) : AudioProcessorEditor (&p), proc (p)
     }
     scSrcBox.addItemList (juce::StringArray { "SC: Internal", "SC: External" }, 1);
     addAndMakeVisible (scSrcBox); addAndMakeVisible (listenBtn); addAndMakeVisible (scWarn);
+    addAndMakeVisible (scEqBtn);
+    scEqAtt = std::make_unique<ButtonAtt> (proc.apvts, "sceq", scEqBtn);
     scSrcAtt  = std::make_unique<ComboAtt>  (proc.apvts, "scsrc", scSrcBox);
     listenAtt = std::make_unique<ButtonAtt> (proc.apvts, "sclisten", listenBtn);
     scWarn.setJustificationType (juce::Justification::centred);
@@ -189,16 +193,17 @@ void GateEditor::resized()
     laf.setDefaultSansSerifTypefaceName ("Arial");
     for (int i = 0; i < kNumKnobs; ++i)
     {
-        const int row = i < 6 ? 0 : 1, col = i < 6 ? i : i - 6;
-        const int x0 = row == 0 ? 530 : 600;                  // la segunda fila va desplazada
-        const int x = S (x0 + col * (row == 0 ? 92 : 92));
-        int y = S (row == 0 ? 130 : 330);
+        const int row = i < 6 ? 0 : i < 11 ? 1 : 2, col = i < 6 ? i : i < 11 ? i - 6 : i - 11;
+        const int x0 = row == 0 ? 530 : row == 1 ? 600 : 250;    // la segunda fila va desplazada; la tercera es el EQ del sidechain
+        const int x = S (x0 + col * (row == 2 ? 86 : 92));
+        int y = S (row == 0 ? 130 : row == 1 ? 330 : 495);
         auto& k = knobs[(size_t) i];
         k.l.setFont (juce::Font (juce::FontOptions (12.f * (float) scale)));
         k.l.setBounds (x, y - S (20), S (88), S (18));
-        k.s.setBounds (x, y, S (88), S (100));
+        k.s.setBounds (x, y, S (row == 2 ? 82 : 88), S (row == 2 ? 96 : 100));
     }
     scSrcBox.setBounds (S (60), S (400), S (150), S (28));
     listenBtn.setBounds (S (225), S (400), S (130), S (28));
+    scEqBtn.setBounds (S (60), S (505), S (150), S (28));
     scWarn.setBounds (S (60), S (436), S (300), S (22));
 }
