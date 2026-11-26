@@ -30,7 +30,7 @@ jobs:
       matrix:
         include:
           - { id: windows,   os: windows-latest }
-          - { id: mac-arm,   os: macos-14 }
+          - { id: mac-arm,   os: macos-latest }
           # Segunda máquina macOS (Intel): tiene su propia cola. Compila igualmente universal (arm64 + x86_64).
           # Si GitHub no da máquina a una de las dos, la otra sirve; el paquete final usa la que termine.
           - { id: mac-intel, os: macos-15-intel }
@@ -89,7 +89,7 @@ jobs:
       - name: "Check architectures (the macOS binary must contain arm64 and x86_64)"
         if: runner.os == 'macOS'
         run: |
-          for b in $(find build -type f -path "*.vst3/Contents/MacOS/*") $(find build -type f -path "*.component/Contents/MacOS/*"); do
+          find build -type f \( -path "*.vst3/Contents/MacOS/*" -o -path "*.component/Contents/MacOS/*" \) -print0 | while IFS= read -r -d '' b; do
             a=$(lipo -archs "$b"); echo "$b: $a"
             case "$a" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "::error::missing architecture in $b"; exit 1;; esac
           done
