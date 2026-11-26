@@ -72,7 +72,7 @@ inline void constrain (Settings& s) noexcept
             s.attackMs = std::clamp (s.attackMs, 0.02, 0.8); s.releaseMs = std::clamp (s.releaseMs, 50.0, 1100.0);
             s.ratio = snapLog (s.ratio, fetRat, 4); s.knee = 3.0; s.holdMs = 0.0; break;
         case OPTO:
-            s.attackMs = 10.0; s.releaseMs = 1500.0; s.ratio = 3.0; s.knee = 12.0; s.holdMs = 0.0; break;
+            s.attackMs = 10.0; s.releaseMs = 1500.0; s.ratio = 4.34; s.knee = 7.28; s.holdMs = 0.0; break;   // curva medida (Peak Reduction 35/50/68/85, tonos de 1 kHz): ratio 4.3:1, rodilla 7.3 dB, error 0.2 dB
         case MU:
             s.attackMs = 1.0; s.releaseMs = 500.0; s.ratio = 2.0; s.knee = 20.0; s.holdMs = 0.0;
             s.muTrim = std::clamp (s.muTrim, -24.0, 24.0); s.muThr = std::clamp (s.muThr, 0.0, 10.0); s.muAtt = std::clamp (std::round (s.muAtt), 0.0, 4.0);
@@ -106,7 +106,7 @@ inline void derive (Settings& s) noexcept
         case OPTO:
         {   // opto: Peak Reduction (medido en 35/50/62; en 0 no comprime) y Gain independiente de la detección:
             // con Gain 0 no suena nada pero la reducción sigue; con Peak Reduction al mínimo no hay compresión. Gain medido: 40 -> +6.7 dB, 100 -> +34.7 dB
-            static const double px[] = { 0.0, 5.0, 10.0, 35.0, 50.0, 62.0, 100.0 }, py[] = { 20.0, 3.0, -9.5, -21.5, -28.9, -34.4, -52.6 };
+            static const double px[] = { 0.0, 5.0, 10.0, 35.0, 50.0, 68.0, 85.0, 100.0 }, py[] = { 20.0, 5.7, -6.8, -18.8, -25.0, -29.7, -48.6, -55.8 };   // umbral (dBFS de pico de un seno) con la curva medida
             const double x = std::clamp (s.pr, 0.0, 100.0); int i = 1; while (x > px[i]) ++i;
             s.thr = py[i - 1] + (x - px[i - 1]) / (px[i] - px[i - 1]) * (py[i] - py[i - 1]);
             const double g = std::clamp (s.gain, 0.0, 100.0);
@@ -205,7 +205,6 @@ struct Timbre
 inline double effectiveKnee (const Settings& s) noexcept
 {
     double w = std::max (0.0, s.knee);
-    if (s.mode == OPTO) w = std::max (w, 10.0);
     if (s.mode == VARI) w = std::max (w, 9.0);   // variable-mu medido: umbral ~-27 dBFS, rodilla ~8-9 dB, ratio ~6.5
     return w;
 }
