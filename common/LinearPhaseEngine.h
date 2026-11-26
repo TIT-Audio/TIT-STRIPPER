@@ -13,12 +13,12 @@ class LinearPhaseEngine : private juce::Thread
 {
 public:
     LinearPhaseEngine() : juce::Thread ("TIT linear phase") {}
-    ~LinearPhaseEngine() override { stopThread (3000); }
+    ~LinearPhaseEngine() override { stopWorker(); }
 
     // Reserva todo para esta frecuencia de muestreo (hilo de mensajes / prepareToPlay, con el audio parado).
     void prepare (double sampleRate)
     {
-        stopThread (3000);
+        stopWorker();
         fs = sampleRate;
         B = lpBlockSize (fs);
         asyncDesigner.prepare (fs);
@@ -114,6 +114,8 @@ public:
     }
 
 private:
+    void stopWorker() { signalThreadShouldExit(); wake.signal(); stopThread (3000); }   // despierta al hilo para que no espere el tiempo de su espera
+
     struct Job { LpSnapshot snap; int quality = 1; int gen = 0; };
 
     void runBlock (int nch)

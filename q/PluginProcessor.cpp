@@ -74,13 +74,13 @@ void TitQProcessor::prepareToPlay (double sampleRate, int)
         b.fade = b.fadeStart = b.fadeEnd = readBandSettings (i).on ? 1.f : 0.f;   // sin fundido al cargar una sesión
         b.sFreq = -1.0; b.sType = -1;
     }
-    setOversampling ((int) std::lround (osParam->load()));
+    linearActive = phaseParam->load() > 0.5f;
+    setOversampling ((int) std::lround (osParam->load()), ! linearActive);
 
     // fase lineal: el motor reserva su memoria aquí; en modo Linear la latencia es la de su filtro
     lpEngine.prepare (sampleRate);
     for (auto& v : soloRing) v.assign ((size_t) lpLatency (3, sampleRate) + kSoloChunk + 8, 0.f);
     soloWrite = 0;
-    linearActive = phaseParam->load() > 0.5f;
     if (linearActive) enterLinear (juce::jlimit (0, 3, (int) std::lround (lpqParam->load())));
     else tailSeconds.store (0.0);
 }
@@ -93,19 +93,15 @@ void TitQProcessor::enterLinear (int quality)
     tailSeconds.store ((double) lat / std::max (1.0, currentSampleRate.load()));
 }
 
-void TitQProcessor::setOversampling (int idx)
+void TitQProcessor::setOversampling (int idx, bool updateLatency)
 {
     idx = juce::jlimit (0, 3, idx);
     currentOs = idx;
     osFactor = 1 << idx;
 
-    if (idx > 0)
-    {
-        oversamplers[(size_t) idx - 1]->reset();
-        setLatencySamples (juce::roundToInt (oversamplers[(size_t) idx - 1]->getLatencyInSamples()));
-    }
-    else
-        setLatencySamples (0);
+    if (idx > 0) oversamplers[(size_t) idx - 1]->reset();
+    if (updateLatency)      // en fase lineal la latencia es la del filtro lineal: no se toca aquí (si no, cada prepareToPlay la cambiaría dos veces y el DAW se reinicia en bucle)
+        setLatencySamples (idx > 0 ? juce::roundToInt (oversamplers[(size_t) idx - 1]->getLatencyInSamples()) : 0);
 
     for (auto& b : bands) { b.eq.reset(); b.lastDyn = -1.0; } // fuerza rediseño con la nueva frecuencia de muestreo
 }

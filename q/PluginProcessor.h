@@ -76,7 +76,7 @@ private:
         double scaleNow = 1.0;
     };
 
-    void setOversampling (int index);
+    void setOversampling (int index, bool updateLatency = true);
     void updateBands (const float* intL, const float* intR, const float* extL, const float* extR, int n);
     void processBands (juce::dsp::AudioBlock<float>& block);
 
