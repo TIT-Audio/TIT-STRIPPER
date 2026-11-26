@@ -115,7 +115,7 @@ TitCompEditor::TitCompEditor (TitCompProcessor& p) : AudioProcessorEditor (&p), 
     addAndMakeVisible (presetMenuBtn);
     presetMenuBtn.onClick = [this] { showPresetMenu(); };
     refreshPresets();
-    addAndMakeVisible (listenBtn); addAndMakeVisible (autoBtn); addAndMakeVisible (onBtn); addAndMakeVisible (deleteBtn);
+    addAndMakeVisible (listenBtn); addAndMakeVisible (colorBtn); addAndMakeVisible (autoBtn); addAndMakeVisible (onBtn); addAndMakeVisible (deleteBtn);
     typeBox.addItemList (typeNames(), 1);
 
     osAtt     = std::make_unique<ComboAtt>  (proc.apvts, "os", osBox);
@@ -125,6 +125,7 @@ TitCompEditor::TitCompEditor (TitCompProcessor& p) : AudioProcessorEditor (&p), 
     dbAtt     = std::make_unique<ComboAtt>  (proc.apvts, "dbrange", dbBox);
     listenAtt = std::make_unique<ButtonAtt> (proc.apvts, "sclisten", listenBtn);
     autoAtt   = std::make_unique<ButtonAtt> (proc.apvts, "autorel", autoBtn);
+    colorAtt  = std::make_unique<ButtonAtt> (proc.apvts, "color", colorBtn);
 
     deleteBtn.onClick = [this] { deleteBand (selected); };
 
@@ -867,7 +868,8 @@ void TitCompEditor::resized()
     presetBox.setBounds (S (725), S (12), S (100), S (26));
     savePresetBtn.setBounds (S (829), S (12), S (62), S (26));
     presetMenuBtn.setBounds (S (895), S (12), S (44), S (26));
-    dbBox.setBounds     (S (950), S (12), S (110), S (26));
+    dbBox.setBounds     (S (950), S (12), S (80),  S (26));
+    colorBtn.setBounds  (S (1036), S (12), S (60), S (26));
 
     for (int i = 0; i < titc::kNumBands; ++i)
         bandButtons[(size_t) i].setBounds (S (44 + i * 46), S (304), S (42), S (26));

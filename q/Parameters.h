@@ -9,7 +9,7 @@ constexpr int kNumBands = 10;
 inline const juce::StringArray& typeNames()
 {
     static const juce::StringArray n { "Bell", "Low Shelf", "High Shelf", "Low Cut", "High Cut",
-                                       "Tilt Shelf", "Tilt Flat", "SL TIT", "BOOBTEC", "TIT SKY", "BIG TIT", "AP TIT" };
+                                       "Tilt Shelf", "Tilt Flat", "SL TIT", "BOOBTEC", "TIT SKY", "TIT 250", "AP TIT" };
     return n;
 }
 

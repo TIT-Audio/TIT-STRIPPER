@@ -88,6 +88,40 @@ int main()
             check (pk == (size_t) N / 2 && std::abs (l[pk] - 1.f) < 1e-3, "vacio: impulso en N/2", (double) pk, N / 2);
         }
 
+        // ---- fase mixta: misma magnitud, fase minima en graves y lineal en agudos ----
+        {
+            const int q = 3, N = lpFirLength (q, fs), P = N / B;
+            LpKernelSet K; K.allocate (B);
+            LpSnapshot s; s.mixed = true;
+            s.band[0] = band (Bell, 1000, 12, 1.0);
+            s.band[1] = band (LowShelf, 120, 6, 0.7);
+            s.band[2] = band (Bell, 80, -9, 2.0);
+            D.design (s, q, K);
+            cv.configure (P);
+            std::vector<float> l ((size_t) N * 2 + (size_t) B * 4, 0.f), r;
+            l[0] = 1.f;
+            run (cv, B, K, nullptr, l, r, 1);
+            EqBand eqs[3];
+            for (int i = 0; i < 3; ++i) eqs[i].design (s.band[(size_t) i].eff, fs * 4.0, 1.0);
+            double worstMag = 0.0, dev4k = 0.0, dev90 = 0.0;
+            for (double f : { 90.0, 150.0, 300.0, 1000.0, 4000.0, 8000.0, 12000.0 })
+            {
+                double re = 0, im = 0;
+                for (int n = 0; n < N; ++n) { const double a = -2 * kPi * f * n / fs; re += l[(size_t) n] * std::cos (a); im += l[(size_t) n] * std::sin (a); }
+                double want = 0.0; for (auto& e : eqs) want += e.magnitudeDb (f, fs * 4.0);
+                worstMag = std::max (worstMag, std::abs (20.0 * std::log10 (std::hypot (re, im) + 1e-12) - want));
+                // desfase respecto a la fase lineal pura (retardo N/2)
+                double ph = std::atan2 (im, re) + 2.0 * kPi * f * (double) (N / 2) / fs;
+                ph = std::remainder (ph, 2.0 * kPi);
+                if (f == 4000.0) dev4k = std::abs (ph);
+                if (f == 90.0) dev90 = std::abs (ph);
+            }
+            std::printf ("fase mixta: error de magnitud %.3f dB, desfase a 4 kHz %.3f rad, a 90 Hz %.3f rad\n", worstMag, dev4k, dev90);
+            check (worstMag < 0.8, "fase mixta: magnitud", worstMag);
+            check (dev4k < 0.05, "fase mixta: lineal en agudos", dev4k);
+            check (dev90 > 0.05, "fase mixta: fase minima en graves", dev90);
+        }
+
         // ---- magnitud: respuesta del FIR contra la de las bandas ----
         for (int q : { 1, 3 })
         {

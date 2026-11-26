@@ -375,8 +375,8 @@ TitQEditor::TitQEditor (TitQProcessor& p) : AudioProcessorEditor (&p), proc (p)
     osBox.setTooltip ("Oversampling (only in Minimum phase mode)");
 
     // fase: Minimum (filtros normales) o Linear (sin desfase, con latencia). La calidad fija la longitud del filtro lineal.
-    phaseBox.addItemList (juce::StringArray { "Phase: Min", "Phase: Linear" }, 1);
-    phaseBox.setTooltip ("Minimum: normal filters, no latency.  Linear: no phase shift, adds latency (reported to the host)");
+    phaseBox.addItemList (juce::StringArray { "Phase: Min", "Phase: Linear", "Phase: Mixed" }, 1);
+    phaseBox.setTooltip ("Minimum: normal filters, no latency.  Linear: no phase shift, adds latency (reported to the host).  Mixed: minimum phase in the bass, linear phase in the highs (same latency as Linear)");
     addAndMakeVisible (phaseBox);
     phaseAtt = std::make_unique<ComboAtt> (proc.apvts, "phase", phaseBox);
     lpqBox.addItemList (juce::StringArray { "Low", "Medium", "High", "Max" }, 1);
@@ -634,16 +634,17 @@ void TitQEditor::updateEnabledStates()
     en (typeBox, used); en (onBtn, used); en (soloBtn, used); en (deleteBtn, used);
     en (knobs[kFreq].s,   used);
     en (knobs[kGain].s,   used && type != BOOBTEC && ! isCut);
-    // Q manual solo en las curvas que la usan; AP TIT (Q automática), BIG TIT y TIT SKY (Q fija) quedan bloqueadas; SL TIT va acotada
+    // Q manual solo en las curvas que la usan; AP TIT (Q automática), TIT SKY (Q según los dB) quedan bloqueadas; SL TIT va acotada
     {   // SL TIT: la ruleta de Q recorre exactamente el rango permitido de la consola (tope izquierdo = Q minima, tope derecho = Q maxima)
         auto& q = knobs[kQ].s;
         if (type == SLTIT) { q.lo = titq::kSltitQMin; q.hi = titq::kSltitQMax; }
+        else if (type == TIT250) { q.lo = titq::kTit250QMin; q.hi = titq::kTit250QMax; }
         else               { q.lo = -1.0; q.hi = -1.0; }
         if (q.limited() && (q.getValue() < q.lo || q.getValue() > q.hi))
             q.setValue (juce::jlimit (q.lo, q.hi, q.getValue()), juce::sendNotificationSync);
         q.repaint();
     }
-    en (knobs[kQ].s,      used && (type == Bell || type == LowShelf || type == HighShelf || type == TiltShelf || type == SLTIT));
+    en (knobs[kQ].s,      used && (type == Bell || type == LowShelf || type == HighShelf || type == TiltShelf || type == SLTIT || type == TIT250));
     en (knobs[kSlope].s,  used && (type == LowShelf || type == HighShelf || isCut));
     en (knobs[kBoost].s,  used && type == BOOBTEC);
     en (knobs[kAtten].s,  used && type == BOOBTEC);
@@ -746,7 +747,7 @@ void TitQEditor::deleteBand (int b)
 
 void TitQEditor::timerCallback()
 {
-    // al elegir TIT SKY (9107.48 Hz) o BOOBTEC (10.3 Hz) en una banda, la frecuencia arranca en ese punto (después se puede mover)
+    // al elegir TIT SKY (11831.67 Hz) o BOOBTEC (25 Hz) en una banda, la frecuencia arranca en ese punto (después se puede mover)
     if (isBandUsed (selected))
     {
         const int tNow = (int) std::lround (proc.apvts.getRawParameterValue (pid (selected, "type"))->load());
@@ -754,6 +755,12 @@ void TitQEditor::timerCallback()
             setParamGesture (pid (selected, "freq"), (float) kTitSkyStartHz);
         else if (lastTypeSeen >= 0 && tNow != lastTypeSeen && tNow == BOOBTEC)
             setParamGesture (pid (selected, "freq"), (float) kBoobtecStartHz);
+        else if (tNow == BOOBTEC)
+        {   // BOOBTEC solo tiene los 4 pasos fijos de graves
+            const float fNow = proc.apvts.getRawParameterValue (pid (selected, "freq"))->load();
+            const float fSn = (float) boobtecSnap ((double) fNow);
+            if (std::abs (fNow - fSn) > 0.001f) setParamGesture (pid (selected, "freq"), fSn);
+        }
         lastTypeSeen = tNow;
     }
 

@@ -12,8 +12,8 @@ Channel strip gratuito con tres módulos: **Gate/Expander**, **TIT COMP** (el co
 
 ## Módulos
 - **Gate/Expander**: Threshold, Range (hasta 90 dB), Ratio (1:1 a infinito; infinito = gate duro), Attack, Hold, Release, Hysteresis, Lookahead (hasta 10 ms), filtros de paso alto y bajo en la señal de detección con **pendiente ajustable de 6 a 96 dB/oct** (los mismos filtros de corte que TIT Q: mandos HP Slope y LP Slope, o la rueda del ratón sobre sus nodos en la gráfica), EQ gráfico de 3 bandas con analizador FFT, Stereo Link, sidechain interno/externo y **SC Listen**. Gráfica de la curva con el punto de trabajo y medidor de reducción.
-- **TIT COMP**: ver el repositorio TIT-COMP (modos Clean, VCA TIT, FET TIT, FET TIT B, OP TIT, FAIR TIT, TIT MU, DXX TIT y TIT DIGITAL).
-- **TIT Q**: ver el repositorio TIT-Q.
+- **TIT COMP**: ver el repositorio TIT-COMP (modos Clean, VCA TIT, FET TIT, FET TIT B, OP TIT, FAIR TIT, TIT MU, DXX TIT y TIT DIGITAL), con el interruptor **Color** (apagado de serie: saturación y timbre medidos de FAIR, FET, FET B, OP y DXX).
+- **TIT Q**: ver el repositorio TIT-Q (v0.5: TIT 250 con Q ajustable, TIT SKY con curvas medidas, BOOBTEC con pasos fijos de graves, fase **Min / Linear / Mixed**, dinámica con coeficientes interpolados muestra a muestra, diseño fiel cerca de Nyquist y bandas encadenadas en 64 bits).
 
 ## Compilar
 `cmake -B build && cmake --build build --config Release --target TITSTRIPPER_VST3`. El flujo de GitHub genera el artefacto `TITSTRIPPER-all` (Windows, macOS y código fuente).

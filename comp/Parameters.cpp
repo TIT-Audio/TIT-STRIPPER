@@ -55,6 +55,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (makeFloat ("attack",  "Attack",     0.01f, 250.f,  10.f, 5.f,   "ms",  2, 0.f));
     layout.add (makeFloat ("release", "Release",    5.f, 5000.f,  120.f, 150.f, "ms",  2, 0.f));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "autorel", 1 }, "Auto Release", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "color", 1 }, "Color", false));
     layout.add (makeFloat ("fin",     "FET Input",   0.f, 48.f,   12.f, 0.f,   "",    1, 0.1f));
     layout.add (makeFloat ("fout",    "FET Output",  0.f, 48.f,   29.f, 0.f,   "",    1, 0.1f));
     layout.add (makeFloat ("pr",      "Peak Reduction", 0.f, 100.f, 40.f, 0.f,  "",    1, 0.1f));

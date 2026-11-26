@@ -37,6 +37,7 @@ Settings TitCompProcessor::readSettings() const
     s.attackMs = P (apvts, "attack"); s.releaseMs = P (apvts, "release"); s.holdMs = P (apvts, "hold");
     s.range = P (apvts, "range");    s.link = P (apvts, "link") * 0.01;
     s.autoRel = P (apvts, "autorel") > 0.5f;
+    s.color = P (apvts, "color") > 0.5f;
     s.fin = P (apvts, "fin"); s.fout = P (apvts, "fout"); s.pr = P (apvts, "pr"); s.gain = P (apvts, "gain");
     s.muTrim = P (apvts, "mutrim"); s.muThr = P (apvts, "muthr"); s.muAtt = P (apvts, "muatt"); s.muRec = P (apvts, "murec");
     s.dxComp = P (apvts, "dxcomp"); s.muMk = P (apvts, "mumk"); s.muFilt = P (apvts, "mufilt");
@@ -73,6 +74,7 @@ void TitCompProcessor::prepareToPlay (double sampleRate, int)
     for (auto& d : delayBuf) d.assign ((size_t) maxDelay, 0.f);
     delayPos = 0;
     for (auto& b : bal) b.reset();
+    for (auto& c : colorTimbre) c.reset();
     det = { 0.0, 0.0 };
     scBuf.setSize (2, kChunk);
     lastOutGain = juce::Decibels::decibelsToGain (P (apvts, "out"));
@@ -181,7 +183,7 @@ void TitCompProcessor::processCore (juce::dsp::AudioBlock<float>& m, juce::dsp::
             auto& d = delayBuf[(size_t) ch];
             d[(size_t) delayPos] = m.getSample (ch, i);
             int rp = delayPos - L; if (rp < 0) rp += dlen;
-            const float delayed = d[(size_t) rp];
+            const float delayed = s.color ? (float) colorPre (s, (double) d[(size_t) rp]) : d[(size_t) rp];
 
             const float g = (float) std::exp (-e * 0.11512925464970229);
             float out = delayed + mix * (delayed * g - delayed);
@@ -283,6 +285,12 @@ void TitCompProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         const float g0 = lastOutGain + (newOutGain - lastOutGain) * (float) pos / (float) total;
         const float g1 = lastOutGain + (newOutGain - lastOutGain) * (float) (pos + n) / (float) total;
         main.applyGainRamp (pos, n, g0, g1);
+        if (s.color)
+            for (int ch = 0; ch < numCh; ++ch)
+            {
+                float* w = main.getWritePointer (ch) + pos;
+                for (int i = 0; i < n; ++i) w[i] = (float) colorTimbre[(size_t) ch].process (colorPost (s, (double) w[i]), timbreFor (s.mode), currentSampleRate.load());
+            }
         pos += n;
     }
     lastOutGain = newOutGain;

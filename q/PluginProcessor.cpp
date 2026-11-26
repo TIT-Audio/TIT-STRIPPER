@@ -151,7 +151,7 @@ void TitQProcessor::updateBands (const float* intL, const float* intR, const flo
                 if (s.type == APTIT)
                     q = juce::jlimit (0.3, 10.0, apTitQ ((double) s.gain));
                 else
-                    q = (s.type == Bell || s.type == SLTIT || s.type == BIGTIT) ? juce::jlimit (0.3, 10.0, (double) s.q) : 0.7;
+                    q = (s.type == Bell || s.type == SLTIT || s.type == TIT250) ? juce::jlimit (0.3, 10.0, (double) s.q) : 0.7;
             }
             if (f != rt.detF || q != rt.detQ) { rt.detector.set (Biquad::bandpass (fs, f, q)); rt.detF = f; rt.detQ = q; }
 
@@ -234,7 +234,7 @@ void TitQProcessor::updateBands (const float* intL, const float* intR, const flo
         rt.effNow = eff; rt.scaleNow = scale;
         if (! linearActive && (rt.lastDyn < 0.0 || eff != rt.last || scale != rt.lastDyn))
         {
-            rt.eq.design (eff, osFs, scale);
+            rt.eq.design (eff, osFs, scale, n * osFactor);   // rampa de coeficientes muestra a muestra durante el trozo
             rt.last = eff;
             rt.lastDyn = scale;
         }
@@ -243,9 +243,16 @@ void TitQProcessor::updateBands (const float* intL, const float* intR, const flo
 
 void TitQProcessor::processBands (juce::dsp::AudioBlock<float>& block)
 {
+    // Todas las bandas se encadenan en 64 bits (double) y solo se redondea a float al final del trozo: sin redondeos intermedios entre bandas
     const int n = (int) block.getNumSamples();
     const int numCh = (int) block.getNumChannels();
-    float dry[kChunk * 8];                       // un trozo como máximo (32 muestras x oversampling x8)
+    double buf[2][kChunk * 8];
+    double dry[kChunk * 8];                      // un trozo como maximo (32 muestras x oversampling x8)
+    for (int ch = 0; ch < numCh; ++ch)
+    {
+        const float* src = block.getChannelPointer ((size_t) ch);
+        for (int i = 0; i < n; ++i) buf[ch][i] = (double) src[i];
+    }
 
     for (auto& b : bands)
     {
@@ -258,14 +265,14 @@ void TitQProcessor::processBands (juce::dsp::AudioBlock<float>& block)
         const bool steady = (b.fadeStart >= 1.f && b.fadeEnd >= 1.f);
 
         // aplica el filtro de la banda a un trozo de senal (con fundido si la banda se esta encendiendo o apagando)
-        auto run = [&] (float* data, int stateCh)
+        auto run = [&] (double* data, int stateCh)
         {
             if (steady) { b.eq.process (data, n, stateCh); return; }
             std::copy (data, data + n, dry);
             b.eq.process (data, n, stateCh);
             for (int i = 0; i < n; ++i)
             {
-                const float w = b.fadeStart + (b.fadeEnd - b.fadeStart) * (float) (i + 1) / (float) n;
+                const double w = (double) b.fadeStart + ((double) b.fadeEnd - (double) b.fadeStart) * (double) (i + 1) / (double) n;
                 data[i] = dry[i] + w * (data[i] - dry[i]);
             }
         };
@@ -273,21 +280,25 @@ void TitQProcessor::processBands (juce::dsp::AudioBlock<float>& block)
         const int mode = numCh == 2 ? b.chmode : 0;
         if (mode == 0)                                   // Stereo: L y R
         {
-            for (int ch = 0; ch < numCh; ++ch) run (block.getChannelPointer ((size_t) ch), ch);
+            for (int ch = 0; ch < numCh; ++ch) run (buf[ch], ch);
         }
         else if (mode == 3 || mode == 4)                 // solo Left o solo Right
         {
-            run (block.getChannelPointer ((size_t) (mode - 3)), mode - 3);
+            run (buf[mode - 3], mode - 3);
         }
         else                                             // Mid o Side: se codifica, se filtra una sola parte y se decodifica
         {
-            float* l = block.getChannelPointer (0);
-            float* r = block.getChannelPointer (1);
-            float m[kChunk * 8], sd[kChunk * 8];
-            for (int i = 0; i < n; ++i) { m[i] = 0.5f * (l[i] + r[i]); sd[i] = 0.5f * (l[i] - r[i]); }
+            double m[kChunk * 8], sd[kChunk * 8];
+            for (int i = 0; i < n; ++i) { m[i] = 0.5 * (buf[0][i] + buf[1][i]); sd[i] = 0.5 * (buf[0][i] - buf[1][i]); }
             if (mode == 1) run (m, 0); else run (sd, 1);
-            for (int i = 0; i < n; ++i) { l[i] = m[i] + sd[i]; r[i] = m[i] - sd[i]; }
+            for (int i = 0; i < n; ++i) { buf[0][i] = m[i] + sd[i]; buf[1][i] = m[i] - sd[i]; }
         }
+    }
+
+    for (int ch = 0; ch < numCh; ++ch)
+    {
+        float* dst = block.getChannelPointer ((size_t) ch);
+        for (int i = 0; i < n; ++i) dst[i] = (float) buf[ch][i];
     }
 }
 
@@ -349,8 +360,8 @@ void TitQProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         double q = 0.5;
         if (s.type == APTIT)
             q = juce::jlimit (0.3, 10.0, apTitQ ((double) s.gain));
-        else if (s.type == Bell || s.type == SLTIT || s.type == BIGTIT)
-            q = juce::jlimit (0.3, 10.0, s.type == BIGTIT ? kBigTitQ + 0.3 : (double) s.q);
+        else if (s.type == Bell || s.type == SLTIT || s.type == TIT250)
+            q = juce::jlimit (0.3, 10.0, (double) s.q);
         if (f != soloF || q != soloQ) { soloFilter.set (Biquad::bandpass (fs, f, q)); soloF = f; soloQ = q; }
     };
 
@@ -371,6 +382,7 @@ void TitQProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
 
         // 2) estado de las bandas -> filtro nuevo (se diseña en otro hilo y entra con un fundido)
         LpSnapshot snap;
+        snap.mixed = phaseParam->load() > 1.5f;
         for (int b = 0; b < kNumBands; ++b)
         {
             const auto& rt = bands[(size_t) b];

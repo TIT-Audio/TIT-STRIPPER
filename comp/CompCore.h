@@ -25,6 +25,9 @@ struct Settings
     double dxComp = 4.0;              // DXX TIT: Compression 1.5..100 (100 = infinito)
     double outParam = 0.0;            // mando Out en dB (make-up / Output / Gain según el modo)
     double makeupDb = 0.0;            // resultado: ganancia de salida que se aplica
+    bool   color = false;             // Color: añade la saturación / timbre medido de cada compresor original (apagado = limpio)
+    double colA = 1.0;                // variable-mu: ganancia lineal de entrada tras Input Gain (1 = a fondo), la fija derive()
+    double vShift = 0.0;              // variable-mu: desplazamiento (dB) del nivel que ve la curva de reducción por Input Gain, lo fija derive()
 };
 
 
@@ -62,7 +65,7 @@ inline void constrain (Settings& s) noexcept
         case VCA:
             s.attackMs = snapLog (s.attackMs, vcaA, 6); s.releaseMs = snapLog (s.releaseMs, vcaR, 4);
             s.ratio = snapLog (s.ratio, vcaRat, 3);
-            s.knee = s.ratio < 3.0 ? 12.4 : (s.ratio < 7.0 ? 4.5 : 1.3);   // medido: la rodilla depende del boton de ratio (2:1 ancha, 10:1 casi dura)
+            s.knee = s.ratio < 3.0 ? 17.6 : (s.ratio < 7.0 ? 9.6 : 4.2);   // medido: la rodilla depende del boton de ratio (2:1 ancha, 10:1 casi dura)
             s.holdMs = 0.0; break;
         case FET:
         case FETB:
@@ -112,12 +115,15 @@ inline void derive (Settings& s) noexcept
             break;
         }
         case VARI:
-        {   // compresor variable-mu: Input Gain = atenuación 1 dB por unidad (0..20); Threshold 0..10 con curva medida; +1.58 dB de ganancia fija
-            static const double tx[] = { 0.0, 2.5, 5.0, 7.5, 10.0 }, ty[] = { 3.0, -13.8, -22.0, -24.1, -27.0 };
-            const double att = 20.0 - std::clamp (s.vin, 0.0, 20.0);   // Input Gain: derecha = mas entrada
-            const double x = std::clamp (s.vthr, 0.0, 10.0); int i = 1; while (x > tx[i]) ++i;
-            s.thr = ty[i - 1] + (x - tx[i - 1]) / (tx[i] - tx[i - 1]) * (ty[i] - ty[i - 1]) + att;
-            s.makeupDb = 1.58 + std::clamp (s.outParam, -20.0, 20.0) - att; break;
+        {   // compresor variable-mu medido (25 pistas): Input Gain desplaza la curva de reducción (att de ganancia 0/5/10/15/20 -> 18.94/14.95/9.91/4.99/0 dB; desplazamiento de la curva
+            // 19.2/15.1/10.1/5.1/0 dB), el Threshold 0..10 elige la curva (tabla en gainReductionDb) y la ganancia de reposo con el Input Gain a fondo es +1.58 dB
+            static const double vx[] = { 0.0, 5.0, 10.0, 15.0, 20.0 }, ag[] = { 18.94, 14.95, 9.91, 4.99, 0.0 }, as[] = { 19.2, 15.1, 10.1, 5.1, 0.0 };
+            const double v = std::clamp (s.vin, 0.0, 20.0); int i = 1; while (v > vx[i]) ++i;
+            const double u = (v - vx[i - 1]) / (vx[i] - vx[i - 1]);
+            const double attG = ag[i - 1] + u * (ag[i] - ag[i - 1]);
+            s.vShift = as[i - 1] + u * (as[i] - as[i - 1]);
+            s.colA = std::pow (10.0, -attG / 20.0);
+            s.makeupDb = 1.58 + std::clamp (s.outParam, -20.0, 20.0) - attG; break;
         }
         case MU:
         {   // Threshold 0..10 como el original: izquierda (MIN) = mas compresion; el umbral sube 20/31.5/46 dB al 50/75/100 % del recorrido; Input Trim entra antes de la curva
@@ -132,6 +138,68 @@ inline void derive (Settings& s) noexcept
         default: break;
     }
 }
+
+
+// ---- Color: saturación / timbre de cada compresor (medido con tonos de 100 Hz, 1 kHz y 5 kHz a -30..0 dBFS; apagado por defecto) ----
+// Antes de la reducción de ganancia (señal de entrada x, 0 dBFS = 1.0)
+inline double colorPre (const Settings& s, double x) noexcept
+{
+    if (! s.color) return x;
+    switch (s.mode)
+    {
+        case VARI: return x + 0.0062 * s.colA * x * x - 0.103 * s.colA * s.colA * x * x * x;   // polinomio estático de la célula de ganancia (independiente de la frecuencia)
+        case FET:  return x + 0.0033 * x * x;                                                 // 2º armónico referido a la entrada (-56 dB a 0 dBFS, sube 1 dB/dB)
+        case FETB: return x + 0.0020 * x * x;                                                 // -60 dB a 0 dBFS
+        default:   return x;
+    }
+}
+// Después de la reducción y del make-up (señal de salida y)
+inline double colorPost (const Settings& s, double y) noexcept
+{
+    if (! s.color) return y;
+    switch (s.mode)
+    {
+        case FET:  return y - 0.0731 * y * y * y;     // 3er armónico referido a la salida (-66 dB con la salida a -16 dBFS)
+        case FETB: return y - 0.0359 * y * y * y;
+        case DXX:  return y + 0.0043 * y * y - 0.071 * y * y * y;
+        case OPTO: return y / std::pow (1.0 + std::pow (std::abs (y) / 1.193, 5.168), 1.0 / 5.168);   // etapa de salida: saturación suave con inicio brusco cerca de 0 dBFS
+        default:   return y;
+    }
+}
+
+// Timbre lineal de cada original (medido con un programa sintético: desfase de baja frecuencia = paso alto de 1er orden; desfase de alta = retardo de unos microsegundos)
+struct TimbreSpec { double hpHz, delayUs; };
+inline TimbreSpec timbreFor (int mode) noexcept
+{
+    switch (mode)
+    {
+        case VARI: return { 18.0, 0.8 };
+        case FET:  return { 14.0, 0.0 };
+        case FETB: return { 15.0, 0.0 };
+        case OPTO: return { 0.0, 1.1 };
+        default:   return { 0.0, 0.0 };
+    }
+}
+struct Timbre
+{
+    double x1 = 0.0, y1 = 0.0, ax1 = 0.0, ay1 = 0.0;
+    void reset() noexcept { x1 = y1 = ax1 = ay1 = 0.0; }
+    inline double process (double x, const TimbreSpec& sp, double fs) noexcept
+    {
+        double v = x;
+        if (sp.hpHz > 0.0)
+        {
+            const double w = std::tan (3.14159265358979323846 * sp.hpHz / fs), b0 = 1.0 / (1.0 + w), a1 = (1.0 - w) / (1.0 + w);
+            const double y = b0 * (v - x1) + a1 * y1; x1 = v; y1 = y; v = y;
+        }
+        if (sp.delayUs > 0.0)
+        {
+            const double d = sp.delayUs * 1.0e-6 * fs, a = (1.0 - d) / (1.0 + d);
+            const double y = a * v + ax1 - a * ay1; ax1 = v; ay1 = y; v = y;
+        }
+        return v;
+    }
+};
 
 // Rodilla efectiva: los modos "suaves" no bajan de un mínimo
 inline double effectiveKnee (const Settings& s) noexcept
@@ -171,6 +239,24 @@ inline double gainReductionDb (double x, const Settings& s) noexcept
         else { int i = 1; while (v > lx[i]) ++i; gr = ly[i - 1] + (v - lx[i - 1]) / (lx[i] - lx[i - 1]) * (ly[i] - ly[i - 1]); }
         return std::clamp (gr, 0.0, std::min (19.5, std::max (0.0, s.range)));
     }
+    if (s.mode == VARI)
+    {   // curvas medidas con Input Gain a fondo (1 kHz, pasos de 2 dB; columnas Threshold 0/2.5/5/7.5/10, filas desde -48 dB); con menos Input Gain la curva se desplaza
+        static const double tab[5][24] = {
+            { 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00 },
+            { 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.08, 0.56, 1.37, 2.41, 3.62, 4.95, 6.38, 7.87, 9.42, 11.01 },
+            { 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.20, 0.79, 1.69, 2.80, 4.05, 5.43, 6.89, 8.41, 9.99, 11.61, 13.27, 14.94, 16.62 },
+            { 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.04, 0.44, 1.20, 2.20, 3.39, 4.71, 6.13, 7.62, 9.18, 10.78, 12.43, 14.10, 15.79, 17.49, 19.21 },
+            { 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.09, 0.57, 1.37, 2.42, 3.64, 4.98, 6.41, 7.92, 9.48, 11.10, 12.75, 14.43, 16.13, 17.85, 19.59, 21.33 } };
+        const double q = std::clamp (s.vthr, 0.0, 10.0) / 2.5; const int k = std::min (3, (int) q); const double w = q - k;
+        const double xe = x - s.vShift;
+        auto col = [&] (int c) noexcept
+        {
+            if (xe <= -48.0) return 0.0;
+            const double pos = (xe + 48.0) * 0.5; int i = (int) pos; if (i > 22) i = 22;
+            const double f = pos - i; return tab[c][i] + f * (tab[c][i + 1] - tab[c][i]);   // pasa de -2 dB con la pendiente del último tramo
+        };
+        return std::clamp ((1.0 - w) * col (k) + w * col (k + 1), 0.0, std::max (0.0, s.range));
+    }
     if (s.mode == DXX)
     {   // compresor VCA RMS de referencia medido (rodilla dura): pendiente efectiva por posicion del mando Compression (1.5/2/3/4/6/10/20/inf)
         static const double cx[] = { 1.5, 2.0, 3.0, 4.0, 6.0, 10.0, 20.0, 100.0 }, cy[] = { 1.55, 2.13, 2.99, 3.85, 5.8, 8.3, 12.5, 59.0 };
@@ -188,11 +274,11 @@ inline double gainReductionDb (double x, const Settings& s) noexcept
         return std::clamp (over - out, 0.0, std::max (0.0, s.range));
     }
     double R = std::max (1.0, s.ratio);
-    if (s.mode == VCA) R = s.ratio < 3.0 ? 1.81 : (s.ratio < 7.0 ? 3.04 : 7.06);   // medido: pendiente efectiva de los botones 2/4/10
+    if (s.mode == VCA) R = s.ratio < 3.0 ? 1.76 : (s.ratio < 7.0 ? 2.06 : 3.74);   // medido: pendiente efectiva de los botones 2/4/10
     if (s.mode == FET) R = std::pow (R, 1.1);    // FET (LN) medido: la pendiente efectiva de los botones 4/8/12/20 sube a ~5/10/15/27:1   // medido en el VCA bus: ratio 2/4/10 se comporta como ~1.8/3.3/7
     double thr = s.thr;
     if (s.mode == VCA)
-        thr *= s.ratio < 3.0 ? 1.506 : (s.ratio < 7.0 ? 1.0 : 0.738);   // medido: el umbral efectivo se desplaza con el boton de ratio (las curvas se cruzan en ~8 dB de reduccion a 0 dBFS)
+        thr *= s.ratio < 3.0 ? 1.54 : (s.ratio < 7.0 ? 1.139 : 0.807);   // medido: el umbral efectivo se desplaza con el boton de ratio (las curvas se cruzan en ~8 dB de reduccion a 0 dBFS)
     if (s.mode == FET || s.mode == FETB)
     {   // FET medido (LN y Rev A): al subir el boton de ratio (4/8/12/20) el umbral efectivo sube ~0/2.9/3.8/5.3 dB
         static const double rx[] = { 4.0, 8.0, 12.0, 20.0 }, ry[] = { 0.0, 2.9, 3.8, 5.3 };
@@ -217,7 +303,7 @@ inline DetectorTimes detectorFor (int mode) noexcept
         case FET:  return { 0.02, 3.0,  0.0 };
         case FETB: return { 0.02, 3.0,  0.0 };
         case OPTO: return { 10.0, 10.0, 3.01 };
-        case VARI: return { 1.0, 1.0,  3.01 };
+        case VARI: return { 1.0, 20.0, 0.52 };   // medido: la reducción no depende de la frecuencia (31 Hz..12 kHz); detector de pico con subida de 1 ms y bajada de 20 ms
         case MU:   return { 1.0, 1.0,  3.01 };
         case DXX:  return { 35.0, 35.0, 3.01 };   // compresor VCA RMS de referencia: detector RMS verdadero (~35 ms en potencia); el ataque dependiente del salto y el release de ~125 dB/s salen de aqui
         default:   return { 0.05, 5.0,  0.0 };
@@ -226,9 +312,9 @@ inline DetectorTimes detectorFor (int mode) noexcept
 
 struct Ballistics
 {
-    double e = 0.0, ef = 0.0, es = 0.0, mem = 0.0;
+    double e = 0.0, ef = 0.0, es = 0.0, mem = 0.0, p1 = 0.0, p2 = 0.0;
     int hold = 0;
-    void reset() noexcept { e = ef = es = mem = 0.0; hold = 0; }
+    void reset() noexcept { e = ef = es = mem = p1 = p2 = 0.0; hold = 0; }
 };
 
 struct Coefs
@@ -238,6 +324,10 @@ struct Coefs
     double aA = 0.0, aAs = 0.0, aR = 0.0;
     int holdSamples = 0;
     double aRf = 0.0, tauSlowBase = 1.0, k0 = 1.0, k1 = 0.0, wFast = 0.5, memCoef = 0.0, fs = 44100.0;
+    bool vm = false;                         // variable-mu con memoria (Time Constant 5 y 6): la parte lenta de la reducción se carga mientras se comprime
+    double smax = 0.7, chg = 0.0, tsMin = 4.0, tsMax = 4.0;
+    bool vatk = false;                       // variable-mu: ataque de dos constantes (parte rapida + cola), medido
+    double wA1 = 0.5, aA1 = 0.0, aA2 = 0.0;
 };
 
 inline Coefs makeCoefs (const Settings& s, double fs) noexcept
@@ -258,9 +348,13 @@ inline Coefs makeCoefs (const Settings& s, double fs) noexcept
         // FET TIT: FET (LN) (0.15 .. 3 ms); FET TIT B: Rev A, algo mas lento (0.4 .. 4.5 ms)
         atkMs = (s.mode == FETB ? 0.4 + 4.1 * u : 0.15 + 4.0 * u) + extra;   // por encima de 0.8 ms (fuera del rango del original) sigue sumando
     }
-    if (s.mode == VARI) atkMs = 1.5;   // medido en un compresor variable-mu: ataque ~1.5 ms en todas las posiciones de Time Constant
+    if (s.mode == VARI) atkMs = std::max (0.01, s.attackMs);   // ataque del variable-mu (fijo en constrain)
     c.aA = std::exp (-1.0 / (atkMs * 0.001 * fs));
     c.aAs = c.aA;
+    if (s.mode == VARI)
+    {   // ataque medido (Time Constant 1 y 6 casi iguales): parte rapida + cola
+        c.vatk = true; c.aA = 0.0; c.aAs = 0.0;   // los valores por Time Constant se fijan mas abajo
+    }
     // medido en un compresor de bus tipo VCA bus: la constante de liberación es ~0.42 x el valor del mando (exponencial única)
     double relMs = std::max (1.0, s.releaseMs);
     if (s.mode == VCA)
@@ -305,19 +399,28 @@ inline Coefs makeCoefs (const Settings& s, double fs) noexcept
         c.tauSlowBase = 0.9 + 0.35 * u; c.k0 = 1.0; c.k1 = 0.0;
     }
     else if (s.mode == VARI)
-    {   // compresor variable-mu medido: posiciones 1/3/5 -> liberacion ~0.1/0.7/1.5 s (con una pequena meseta inicial);
-        // la posicion 6 es de dos etapas: ~0.25 s y luego ~2.5 s
+    {   // variable-mu medido (G y B): Time Constant 1..4 = exponencial unica de 0.10/0.30/0.87/1.70 s sin memoria;
+        // 5 y 6: parte rapida (0.30 / 0.14 s) + parte lenta (3.97 s / 6..9 s) cuyo peso crece con el tiempo comprimiendo (se carga con 1.0 / 1.5 s hasta el 67 / 75 %)
         const double rel = std::max (1.0, s.releaseMs);
-        if (rel < 2500.0)
+        const int tc = rel <= 150.0 ? 1 : rel <= 500.0 ? 2 : rel <= 950.0 ? 3 : rel <= 1300.0 ? 4 : rel <= 2000.0 ? 5 : 6;
+        {   // ataque medido (TC1: 75 % a 0.3 ms + cola 3.5 ms; TC6: 90 % a 0.1 ms + cola 5 ms); entre medias se interpola
+            const double u = (tc - 1) / 5.0;
+            c.wA1 = 0.75 + 0.15 * u;
+            c.aA1 = std::exp (-1.0 / ((0.3 - 0.2 * u) * 1.0e-3 * fs));
+            c.aA2 = std::exp (-1.0 / ((3.5 + 1.5 * u) * 1.0e-3 * fs));
+        }
+        if (tc <= 4)
         {
-            static const double rx[] = { 100.0, 200.0, 800.0, 1100.0, 1500.0, 2500.0 }, ry[] = { 100.0, 100.0, 700.0, 1300.0, 1500.0, 2000.0 };
-            c.aR = std::exp (-1.0 / (logTable (rel, rx, ry, 6) * 0.001 * fs));
+            static const double tau[] = { 0.10, 0.30, 0.87, 1.70 };
+            c.aR = std::exp (-1.0 / (tau[tc - 1] * fs));
         }
         else
         {
-            c.dual = true; c.wFast = 0.5;
-            c.aRf = std::exp (-1.0 / (0.25 * fs));
-            c.tauSlowBase = 2.5; c.k0 = 1.0; c.k1 = 0.0;
+            c.vm = true;
+            c.aRf = std::exp (-1.0 / ((tc == 5 ? 0.30 : 0.14) * fs));
+            c.smax = tc == 5 ? 0.674 : 0.745;
+            c.chg = 1.0 - std::exp (-1.0 / ((tc == 5 ? 1.0 : 1.5) * fs));
+            c.tsMin = tc == 5 ? 3.97 : 6.0; c.tsMax = tc == 5 ? 3.97 : 9.0;
         }
     }
     if (s.mode == DXX)
@@ -348,6 +451,32 @@ inline Coefs makeCoefs (const Settings& s, double fs) noexcept
 // Un paso de balística sobre la reducción objetivo g (dB). Devuelve la reducción suavizada (dB).
 inline double step (Ballistics& b, double g, const Coefs& c) noexcept
 {
+    if (c.vatk)
+    {   // el ataque sube con dos exponenciales (la bajada es inmediata: el release lo da el resto de la balistica)
+        b.p1 = g > b.p1 ? c.aA1 * b.p1 + (1.0 - c.aA1) * g : g;
+        b.p2 = g > b.p2 ? c.aA2 * b.p2 + (1.0 - c.aA2) * g : g;
+        g = c.wA1 * b.p1 + (1.0 - c.wA1) * b.p2;
+    }
+    if (c.vm)
+    {
+        if (std::abs (b.ef + b.es - b.e) > 0.05) { b.ef = b.e; b.es = 0.0; }   // cambio de modo o de posicion: toda la reduccion actual pasa a la parte rapida
+        double tot = b.ef + b.es;
+        if (g > tot) b.ef += (1.0 - c.aA) * (g - tot);                       // el ataque entra como parte rapida
+        tot = b.ef + b.es;
+        const double mv = (c.smax * tot - b.es) * c.chg;                      // la parte lenta se carga mientras se comprime
+        if (mv > 0.0) { const double m = std::min (mv, b.ef); b.es += m; b.ef -= m; }
+        if (g < tot)
+        {
+            const double share = tot > 1.0e-9 ? b.es / tot : 0.0;
+            const double tauS = c.tsMin + (c.tsMax - c.tsMin) * std::clamp (share / c.smax, 0.0, 1.0);
+            const double aRs = 1.0 - 1.0 / (tauS * c.fs);
+            if (b.es > c.smax * g) b.es = aRs * b.es + (1.0 - aRs) * c.smax * g;
+            const double gt = std::max (0.0, g - b.es);
+            if (b.ef > gt) b.ef = c.aRf * b.ef + (1.0 - c.aRf) * gt;
+        }
+        b.e = b.ef + b.es;
+        return b.e;
+    }
     if (c.mu)
     {
         const double dn = c.muRate / c.fs;

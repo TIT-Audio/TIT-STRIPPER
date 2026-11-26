@@ -45,7 +45,8 @@ struct LpBandSnap
 struct LpSnapshot
 {
     std::array<LpBandSnap, kLpBands> band;
-    bool operator== (const LpSnapshot& o) const noexcept { return band == o.band; }
+    bool mixed = false;        // fase mixta: minima en graves, lineal en agudos
+    bool operator== (const LpSnapshot& o) const noexcept { return band == o.band && mixed == o.mixed; }
     bool operator!= (const LpSnapshot& o) const noexcept { return ! (*this == o); }
 };
 
@@ -176,6 +177,9 @@ public:
         db.assign ((size_t) maxN / 2 + 1, 0.0);
         grid.assign (4096, 0.0);
         zN.assign ((size_t) maxN * 2, 0.0);
+        zM.assign ((size_t) maxN * 2, 0.0);
+        phA.assign ((size_t) maxN / 2 + 1, 0.0);
+        phB.assign ((size_t) maxN / 2 + 1, 0.0);
         hA.assign ((size_t) maxN, 0.f);
         hB.assign ((size_t) maxN, 0.f);
         zP.assign ((size_t) B * 4, 0.f);
@@ -202,6 +206,7 @@ public:
     void design (const LpSnapshot& snap, int quality, LpKernelSet& out)
     {
         quality = std::clamp (quality, 0, 3);
+        mixed = snap.mixed;
         const int N = lpFirLength (quality, fs), half = N / 2;
         out.N = N; out.B = B; out.P = N / B;
 
@@ -304,12 +309,57 @@ public:
         }
     }
 
+    static constexpr double kMixedHz = 500.0;   // por debajo la fase es la minima del filtro; por encima, lineal
+
 private:
+    // fase minima (rad) de una magnitud par (bins 0..N/2) por cepstro: ln|H| -> cepstro real -> plegado causal -> exp
+    void minPhase (const double* mag, int quality, int N, double* phase)
+    {
+        const int half = N / 2;
+        double* c = zM.data();
+        for (int k = 0; k < N; ++k)
+        {
+            const int kk = k <= half ? k : N - k;
+            c[2 * k] = std::log (std::max (mag[kk], 1.0e-6));
+            c[2 * k + 1] = 0.0;
+        }
+        fftN[(size_t) quality].transform (c, true);
+        const double inv = 1.0 / (double) N;
+        for (int n = 0; n < N; ++n)
+        {
+            double v = c[2 * n] * inv;
+            if (n == 0 || n == half) { /* se queda */ }
+            else if (n < half) v *= 2.0;
+            else v = 0.0;
+            c[2 * n] = v; c[2 * n + 1] = 0.0;
+        }
+        fftN[(size_t) quality].transform (c, false);
+        for (int k = 0; k <= half; ++k) phase[k] = c[2 * k + 1];
+    }
+
     // dos respuestas de magnitud (reales y pares) -> dos filtros FIR -> espectros por trozos
     void build (const double* magA, const double* magB, int quality, int N, std::vector<float>& specA, std::vector<float>& specB)
     {
         const int half = N / 2;
         double* z = zN.data();
+        if (mixed)
+        {
+            // fase mixta: a la magnitud se le da la fase minima de los graves (se funde hacia fase cero por encima de kMixedHz)
+            minPhase (magA, quality, N, phA.data());
+            if (magB) minPhase (magB, quality, N, phB.data());
+            for (int k = 0; k <= half; ++k)
+            {
+                const double ratio = ((double) k * fs / (double) N) / kMixedHz, r2 = ratio * ratio;
+                const double wgt = 1.0 / (1.0 + r2 * r2);
+                const double pa = (k == 0 || k == half) ? 0.0 : wgt * phA[(size_t) k], pb = (magB && k != 0 && k != half) ? wgt * phB[(size_t) k] : 0.0;
+                const double ar = magA[k] * std::cos (pa), ai = magA[k] * std::sin (pa);
+                const double br = magB ? magB[k] * std::cos (pb) : 0.0, bi = magB ? magB[k] * std::sin (pb) : 0.0;
+                // Z = A + jB con A y B hermiticos: Z[k] = A[k] + jB[k] ; Z[N-k] = conj(A[k]) + j conj(B[k])
+                z[2 * k] = ar - bi;       z[2 * k + 1] = ai + br;
+                if (k != 0 && k != half) { z[2 * (N - k)] = ar + bi; z[2 * (N - k) + 1] = -ai + br; }
+            }
+        }
+        else
         for (int k = 0; k < N; ++k)
         {
             const int kk = k <= half ? k : N - k;
@@ -353,7 +403,8 @@ private:
     LpFft<float> fftB;
     std::array<std::vector<float>, 4> win;
     std::array<std::vector<double>, 4> m;
-    std::vector<double> db, grid, zN;
+    std::vector<double> db, grid, zN, zM, phA, phB;
+    bool mixed = false;
     std::vector<float> hA, hB, zP, pA, pB;
 };
 

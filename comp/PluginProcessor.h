@@ -70,6 +70,7 @@ private:
     std::array<std::vector<float>, 2> delayBuf;
     int delayPos = 0;
     std::array<titc::Ballistics, 2> bal;
+    std::array<titc::Timbre, 2> colorTimbre;
     titq::Biquad muHp, muHp1;   // filtro de sidechain de TIT MU: 2o orden + 1er orden (medido en un compresor variable-mu de referencia)
     std::array<double, 2> det { 0.0, 0.0 };
 

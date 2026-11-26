@@ -66,11 +66,45 @@ int main()
             { 100, 10, 0, 100, 13.3 }, { 100, 10, 0, 1000, 1.4 }, { 100, 0, 10, 1000, -4.6 }, { 100, 10, 10, 1000, -6.9 }, { 100, 10, 10, 200, 7.6 } };
         for (const auto& p : pts)
         {
-            titq::BandSettings st; st.type = titq::BOOBTEC; st.freq = (float) p.cps; st.boost = (float) p.b; st.atten = (float) p.a;
+            // selector nominal (20/30/60/100) -> frecuencia real medida (25/45/89.18/136.94)
+            titq::BandSettings st; st.type = titq::BOOBTEC; st.freq = (float) (p.cps == 20 ? 25.0 : p.cps == 30 ? 45.0 : p.cps == 60 ? 89.18 : 136.94); st.boost = (float) p.b; st.atten = (float) p.a;
             titq::EqBand eq; eq.design (st, 48000.0, 1.0);
             const double got = eq.magnitudeDb (p.f, 48000.0);
             check (std::abs (got - p.db) < 1.2, "BOOBTEC lejos del ecualizador de referencia medido", titq::BOOBTEC, 48000.0, got, p.db);
         }
+    }
+    // TIT SKY: frecuencia y Q siguen las curvas medidas; TIT 250: Q acotada; BOOBTEC: solo pasos fijos
+    {
+        double fm, q;
+        titq::titSkyShape (2.6, fm, q);  if (std::abs (fm - 1.0) > 1e-9 || std::abs (q - 0.499) > 1e-9) { ++failures; std::printf ("FALLO: TIT SKY 2.6 dB\n"); }
+        titq::titSkyShape (4.44, fm, q); if (std::abs (q - 0.457) > 1e-9) { ++failures; std::printf ("FALLO: TIT SKY 4.44 dB\n"); }
+        titq::titSkyShape (10.14, fm, q); if (std::abs (fm * titq::kTitSkyStartHz - 9624.37) > 0.01 || std::abs (q - 0.475) > 1e-9) { ++failures; std::printf ("FALLO: TIT SKY 10.14 dB\n"); }
+        titq::titSkyShape (20.0, fm, q); if (std::abs (fm * titq::kTitSkyStartHz - 9624.37) > 0.01) { ++failures; std::printf ("FALLO: TIT SKY tope\n"); }
+        if (titq::boobtecSnap (30.0) != 25.0 || titq::boobtecSnap (60.0) != 45.0 || titq::boobtecSnap (80.0) != 89.18 || titq::boobtecSnap (1000.0) != 136.94) { ++failures; std::printf ("FALLO: pasos de BOOBTEC\n"); }
+        titq::BandSettings st; st.type = titq::TIT250; st.freq = 1000.f; st.gain = 6.f;
+        st.q = 0.1f; titq::EqBand a; a.design (st, 48000.0, 1.0); st.q = (float) titq::kTit250QMin; titq::EqBand b; b.design (st, 48000.0, 1.0);
+        if (std::abs (a.magnitudeDb (300.0, 48000.0) - b.magnitudeDb (300.0, 48000.0)) > 1e-6) { ++failures; std::printf ("FALLO: TIT 250 Q minima\n"); }
+    }
+    // cerca de Nyquist el diseno elegido no se aleja del prototipo analogico mas que el bilineal clasico
+    {
+        for (double dB : { -12.0, 6.0, 12.0 })
+            for (int t = 0; t < 3; ++t)
+            {
+                const double fs = 48000.0, f = 12000.0, q = 0.7, A = std::pow (10.0, dB / 40.0);
+                const auto best = titq::Biquad::bestDesign (t, fs, f, q, dB);
+                const auto rbj = t == 0 ? titq::Biquad::rbjPeak (fs, f, q, dB) : t == 1 ? titq::Biquad::rbjLowShelf (fs, f, q, dB) : titq::Biquad::rbjHighShelf (fs, f, q, dB);
+                const double eb = titq::Biquad::devFromAnalog (best, t, A, q, f, fs), er = titq::Biquad::devFromAnalog (rbj, t, A, q, f, fs);
+                if (eb > er + 1e-9) { ++failures; std::printf ("FALLO: diseno cerca de Nyquist peor que RBJ (%.2f vs %.2f)\n", eb, er); }
+            }
+    }
+    // rampa de coeficientes: llega exactamente a los coeficientes nuevos y no desestabiliza
+    {
+        titq::BandSettings st; st.type = titq::Bell; st.freq = 3000.f; st.gain = 12.f; st.q = 2.f;
+        titq::EqBand e; e.design (st, 48000.0, 0.0);
+        std::vector<float> x (4096, 0.f); x[0] = 1.f;
+        for (int blk = 0; blk < 16; ++blk) { e.design (st, 48000.0, (blk + 1) / 16.0, 256); e.process (x.data() + blk * 256, 256, 0); }
+        double mx = 0; for (float v : x) mx = std::max (mx, (double) std::abs (v));
+        if (! (mx < 4.0)) { ++failures; std::printf ("FALLO: rampa inestable (%.2f)\n", mx); }
     }
     if (failures == 0) std::printf ("Todas las pruebas del ecualizador han pasado.\n");
     return failures == 0 ? 0 : 1;

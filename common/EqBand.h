@@ -8,16 +8,35 @@ namespace titq
 enum BandType
 {
     Bell = 0, LowShelf, HighShelf, LowCut, HighCut, TiltShelf, TiltFlat,
-    SLTIT, BOOBTEC, TITSKY, BIGTIT, APTIT, NumBandTypes
+    SLTIT, BOOBTEC, TITSKY, TIT250, APTIT, NumBandTypes
 };
 
 // ---- Constantes de las emulaciones (ajustables) ----
 constexpr double kSltitQMin   = 0.303;   // Q más ancha de SLTIT
 constexpr double kSltitQMax   = 2.254;   // Q más estrecha de SLTIT
-constexpr double kBigTitQ     = 0.197;   // Q fija de BIGTIT
-constexpr double kTitSkyQ     = 0.475;   // Q del high shelf TIT SKY (12 dB/oct), medida con la banda AIR en 40k
-constexpr double kTitSkyStartHz = 9107.48; // frecuencia de partida de TIT SKY al elegir ese tipo
-constexpr double kBoobtecStartHz = 25.0;   // frecuencia de partida de BOOBTEC al elegir ese tipo
+constexpr double kTit250QMin  = 0.393;   // Q más ancha de TIT 250 (medida en Plugin Doctor)
+constexpr double kTit250QMax  = 2.121;   // Q más estrecha de TIT 250
+constexpr double kTitSkyStartHz = 11831.67; // frecuencia de partida de TIT SKY al elegir ese tipo
+constexpr double kTitSkyMaxDb   = 10.14;    // tope de ganancia de TIT SKY
+constexpr double kBoobtecStartHz = 25.0;
+// pasos fijos de graves de BOOBTEC: frecuencias reales medidas (posiciones 20/30/60/100 del original)
+constexpr double kBoobtecSteps[4] = { 25.0, 45.0, 89.18, 136.94 };
+inline double boobtecSnap (double f) noexcept
+{
+    double best = kBoobtecSteps[0];
+    for (double s : kBoobtecSteps) if (std::abs (std::log (f / s)) < std::abs (std::log (f / best))) best = s;
+    return best;
+}
+// TIT SKY: high shelf 12 dB/oct cuya frecuencia y Q siguen las curvas medidas al subir los dB (la frecuencia es un factor sobre la de partida)
+inline void titSkyShape (double gainDb, double& fMul, double& q) noexcept
+{
+    static const double xs[5] = { 2.6, 4.44, 6.84, 8.2, 10.14 }, fs5[5] = { 11831.67, 11831.67, 10388.33, 10053.76, 9624.37 }, qs[5] = { 0.499, 0.457, 0.475, 0.475, 0.475 };
+    const double x = std::clamp (std::abs (gainDb), xs[0], xs[4]);
+    int i = 0; while (i < 3 && x > xs[i + 1]) ++i;
+    const double t = (x - xs[i]) / (xs[i + 1] - xs[i]);
+    fMul = (fs5[i] + t * (fs5[i + 1] - fs5[i])) / kTitSkyStartHz;
+    q = qs[i] + t * (qs[i + 1] - qs[i]);
+}   // frecuencia de partida de BOOBTEC al elegir ese tipo
 // BOOBTEC: medido en un DAW contra un ecualizador pasivo de referencia (ruido blanco, función de transferencia).
 //  - BOOB (boost): low shelf de Q 0.445 y 16.6 dB con el mando a 10; su frecuencia central sube al bajar el mando.
 //  - ATTIT (atten): low shelf hacia abajo (Q 0.43, -20.4 dB a 10) que parte de la zona de la campana del boost.
@@ -176,11 +195,18 @@ public:
     static constexpr int kMaxStages = 8;
 
     // dyn = factor 0..1 que escala la ganancia (lo usa el modo dinámico)
-    void design (const BandSettings& s, double fs, double dyn) noexcept
+    void design (const BandSettings& s, double fs, double dyn, int rampSamples = 0) noexcept
     {
         active = s.on;
         int n = 0;
-        auto add = [&] (const Biquad::Coeffs& c) { if (n < kMaxStages) stages[(size_t) n++].set (c); };
+        // con rampa (modo dinamico): si la banda tiene la misma estructura que en el diseno anterior, los coeficientes se interpolan muestra a muestra
+        const bool ramp = rampSamples > 0 && s.type == lastType && s.on && numStages > 0;
+        auto add = [&] (const Biquad::Coeffs& c)
+        {
+            if (n >= kMaxStages) return;
+            if (ramp && n < numStages) stages[(size_t) n].setRamp (c, rampSamples); else stages[(size_t) n].set (c);
+            ++n;
+        };
 
         const double nyq = 0.49 * fs;
         const double f = std::clamp ((double) s.freq, 10.0, nyq);
@@ -191,9 +217,15 @@ public:
         {
             case Bell:   add (Biquad::peak (fs, f, q, g)); break;
             case SLTIT:  add (Biquad::peak (fs, f, std::clamp (q, kSltitQMin, kSltitQMax), g)); break;
-            case BIGTIT: add (Biquad::peak (fs, f, kBigTitQ, g)); break;
+            case TIT250: add (Biquad::peak (fs, f, std::clamp (q, kTit250QMin, kTit250QMax), g)); break;
             case APTIT:  add (Biquad::peak (fs, f, apTitQ (g), g)); break;   // Q bloqueada: depende de los dB
-            case TITSKY: add (Biquad::highShelf (fs, f, kTitSkyQ, g)); break;
+            case TITSKY:
+            {
+                double fm, qs; const double gc = std::clamp (g, -kTitSkyMaxDb, kTitSkyMaxDb);
+                titSkyShape (gc, fm, qs);
+                add (Biquad::highShelf (fs, std::clamp (f * fm, 10.0, nyq), qs, gc));
+                break;
+            }
 
             case LowShelf:
             case HighShelf:
@@ -227,13 +259,13 @@ public:
 
             case BOOBTEC:
             {
-                // anclas medidas en las 4 posiciones del selector (20, 30, 60, 100 Hz)
-                static const double xs[4]     = { 20.0, 30.0, 60.0, 100.0 };
+                // anclas medidas en las 4 posiciones del selector (frecuencias reales 25, 45, 89.18 y 136.94 Hz)
+                static const double xs[4]     = { 25.0, 45.0, 89.18, 136.94 };
                 static const double fBoost[4] = { 32.33, 76.99, 145.84, 239.56 };   // centro del shelf de boost a 10
                 static const double fAtt[4]   = { 59.6, 102.4, 247.4, 436.6 };      // centro del shelf de atten a 10
                 static const double fBell[4]  = { 120.2, 237.2, 506.3, 862.6 };     // centro de la campana (boost + atten)
                 static const double gBell[4]  = { -8.3, -7.3, -8.4, -8.7 };         // profundidad de la campana a 10
-                const double fi = std::clamp (f, 10.0, 200.0);
+                const double fi = boobtecSnap (f);
                 const double bn = std::clamp ((double) s.boost * dyn / 10.0, 0.0, 1.0);
                 const double an = std::clamp ((double) s.atten * dyn / 10.0, 0.0, 1.0);
                 const double gB10 = 10.0 * kBoobtecDbPerStep, gA10 = 10.0 * kBoobtecAttDbPerStep;
@@ -270,9 +302,11 @@ public:
 
         for (int i = numStages; i < n; ++i) stages[(size_t) i].reset();
         numStages = n;
+        lastType = s.type;
     }
 
-    void process (float* d, int n, int ch) noexcept
+    template <typename T>
+    void process (T* d, int n, int ch) noexcept
     {
         for (int i = 0; i < numStages; ++i) stages[(size_t) i].process (d, n, ch);
     }
@@ -291,7 +325,7 @@ public:
 
 private:
     std::array<Biquad, kMaxStages> stages;
-    int numStages = 0;
+    int numStages = 0, lastType = -1;
     bool active = false;
 };
 } // namespace titq

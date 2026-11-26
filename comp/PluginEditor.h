@@ -99,11 +99,11 @@ private:
     juce::ComboBox osBox, modeBox, scSrcBox, dbBox, typeBox, presetBox, msBox;
     juce::TextButton savePresetBtn { "Save" }, presetMenuBtn { "..." };
     std::unique_ptr<juce::FileChooser> chooser;
-    juce::ToggleButton listenBtn { "SC Listen" }, onBtn { "On" }, autoBtn { "Auto" };
+    juce::ToggleButton listenBtn { "SC Listen" }, onBtn { "On" }, autoBtn { "Auto" }, colorBtn { "Color" };
     juce::TextButton deleteBtn { "Delete" };
     juce::Label scWarn;
     std::unique_ptr<ComboAtt> osAtt, modeAtt, scSrcAtt, dbAtt, typeAtt, msAtt;
-    std::unique_ptr<ButtonAtt> listenAtt, onAtt, autoAtt;
+    std::unique_ptr<ButtonAtt> listenAtt, onAtt, autoAtt, colorAtt;
 
     int selected = 0;
     std::array<juce::TextButton, titc::kNumBands> bandButtons;
