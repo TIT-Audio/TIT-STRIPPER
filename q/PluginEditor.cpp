@@ -610,6 +610,12 @@ void TitQEditor::selectBand (int b)
     freeAtt  = std::make_unique<ButtonAtt> (proc.apvts, pid (b, "scfree"), freeBtn);
     chAtt    = std::make_unique<ComboAtt>  (proc.apvts, pid (b, "chmode"), chBox);
 
+    if (boobStepped)
+    {   // al cambiar de banda se restaura el mando; el temporizador lo vuelve a poner en pasos si la banda es BOOBTEC
+        auto& fk = knobs[kFreq].s;
+        fk.onValueChange = nullptr; fk.textFromValueFunction = nullptr; fk.valueFromTextFunction = nullptr;
+        boobStepped = false;
+    }
     for (int i = 0; i < kNumKnobs; ++i)
     {
         knobs[(size_t) i].att.reset();
@@ -745,6 +751,45 @@ void TitQEditor::deleteBand (int b)
     updateEnabledStates();
 }
 
+// BOOBTEC: el mando de frecuencia pasa a ser un selector de 4 posiciones (20, 30, 60 y 100 Hz como en el original), de tope a tope.
+// Cada posicion fija la frecuencia real medida (25, 45, 89.18 y 136.94 Hz).
+void TitQEditor::setBoobtecFreqKnob (bool on)
+{
+    if (on == boobStepped) return;
+    boobStepped = on;
+    auto& k = knobs[kFreq];
+    static const char* nominal[4] = { "20 Hz", "30 Hz", "60 Hz", "100 Hz" };
+    if (on)
+    {
+        k.att.reset();
+        k.s.lo = -1.0; k.s.hi = -1.0;
+        k.s.setNormalisableRange (juce::NormalisableRange<double> (0.0, 3.0, 1.0));
+        k.s.textFromValueFunction = [] (double v) { return juce::String (nominal[juce::jlimit (0, 3, (int) std::lround (v))]); };
+        k.s.valueFromTextFunction = [] (const juce::String& s)
+        {
+            const double f = s.getDoubleValue(); const double nom[4] = { 20.0, 30.0, 60.0, 100.0 };
+            int idx = 0; for (int i = 1; i < 4; ++i) if (std::abs (f - nom[i]) < std::abs (f - nom[idx])) idx = i;
+            return (double) idx;
+        };
+        k.s.onValueChange = [this]
+        {
+            const int idx = juce::jlimit (0, 3, (int) std::lround (knobs[kFreq].s.getValue()));
+            setParamGesture (pid (selected, "freq"), (float) kBoobtecSteps[idx]);
+        };
+        const float fNow = proc.apvts.getRawParameterValue (pid (selected, "freq"))->load();
+        int idx = 0; for (int i = 1; i < 4; ++i) if (std::abs (fNow - (float) kBoobtecSteps[i]) < std::abs (fNow - (float) kBoobtecSteps[idx])) idx = i;
+        k.s.setValue ((double) idx, juce::dontSendNotification);
+        k.s.updateText();
+    }
+    else
+    {
+        k.s.onValueChange = nullptr;
+        k.s.textFromValueFunction = nullptr;
+        k.s.valueFromTextFunction = nullptr;
+        k.att = std::make_unique<SliderAtt> (proc.apvts, pid (selected, "freq"), k.s);   // restaura el rango, la escala y el texto del parametro
+    }
+}
+
 void TitQEditor::timerCallback()
 {
     // al elegir TIT SKY (11831.67 Hz) o BOOBTEC (25 Hz) en una banda, la frecuencia arranca en ese punto (después se puede mover)
@@ -760,6 +805,14 @@ void TitQEditor::timerCallback()
             const float fNow = proc.apvts.getRawParameterValue (pid (selected, "freq"))->load();
             const float fSn = (float) boobtecSnap ((double) fNow);
             if (std::abs (fNow - fSn) > 0.001f) setParamGesture (pid (selected, "freq"), fSn);
+        }
+        setBoobtecFreqKnob (tNow == BOOBTEC);
+        if (boobStepped)
+        {   // sigue al parametro (automatizacion, presets, clic en la grafica): el mando muestra el paso que corresponde
+            const float fNow = proc.apvts.getRawParameterValue (pid (selected, "freq"))->load();
+            int idx = 0; for (int i = 1; i < 4; ++i) if (std::abs (fNow - (float) kBoobtecSteps[i]) < std::abs (fNow - (float) kBoobtecSteps[idx])) idx = i;
+            if (! knobs[kFreq].s.isMouseButtonDown() && (int) std::lround (knobs[kFreq].s.getValue()) != idx)
+                knobs[kFreq].s.setValue ((double) idx, juce::dontSendNotification);
         }
         lastTypeSeen = tNow;
     }

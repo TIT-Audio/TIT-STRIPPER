@@ -54,6 +54,8 @@ private:
         std::unique_ptr<SliderAtt> att;
     };
 
+    bool boobStepped = false;              // el mando de frecuencia esta en modo BOOBTEC (4 pasos 20/30/60/100)
+    void setBoobtecFreqKnob (bool on);
     void timerCallback() override;
     void selectBand (int b);
     void updateEnabledStates();
