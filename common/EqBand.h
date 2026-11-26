@@ -17,7 +17,7 @@ constexpr double kSltitQMax   = 2.254;   // Q más estrecha de SLTIT
 constexpr double kBigTitQ     = 0.197;   // Q fija de BIGTIT
 constexpr double kTitSkyQ     = 0.475;   // Q del high shelf TIT SKY (12 dB/oct), medida con la banda AIR en 40k
 constexpr double kTitSkyStartHz = 9107.48; // frecuencia de partida de TIT SKY al elegir ese tipo
-constexpr double kBoobtecStartHz = 10.3;   // frecuencia de partida de BOOBTEC al elegir ese tipo
+constexpr double kBoobtecStartHz = 25.0;   // frecuencia de partida de BOOBTEC al elegir ese tipo
 // BOOBTEC: medido en un DAW contra un ecualizador pasivo de referencia (ruido blanco, función de transferencia).
 //  - BOOB (boost): low shelf de Q 0.445 y 16.6 dB con el mando a 10; su frecuencia central sube al bajar el mando.
 //  - ATTIT (atten): low shelf hacia abajo (Q 0.43, -20.4 dB a 10) que parte de la zona de la campana del boost.

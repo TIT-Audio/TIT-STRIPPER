@@ -83,6 +83,8 @@ private:
     int  zoneAt (juce::Point<float> pos) const;
     int  createZoneBand (juce::Point<float> pos, int zone);
     juce::uint32 lastCreateMs = 0;
+    juce::uint32 lastZoneClickMs = 0;
+    juce::Point<float> lastZoneClickPos;
     int  createBand (float freq, float gainDb, const juce::String& typeName, float slope);
     void deleteBand (int band);
 

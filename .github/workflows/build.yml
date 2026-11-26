@@ -96,6 +96,13 @@ jobs:
           name: zip-${{ matrix.id }}
           path: TITSTRIPPER-*.zip
 
+      # Paquete de Windows listo en cuanto termina su build, sin esperar a los Macs (que a veces tardan horas en cola)
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: TITSTRIPPER-Windows
+          path: TITSTRIPPER-Windows-VST3.zip
+
   # Junta todo en UN solo artefacto / carpeta: Windows + macOS + código fuente
   package:
     needs: build

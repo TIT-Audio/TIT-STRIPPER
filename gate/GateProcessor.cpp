@@ -101,6 +101,7 @@ bool GateProcessor::isBusesLayoutSupported (const BusesLayout& l) const
 void GateProcessor::prepareToPlay (double sampleRate, int)
 {
     fs = sampleRate;
+    currentSampleRate.store (sampleRate);
     gate.prepare (sampleRate, 12.0);
     gate.setSettings (readSettings());
     lastLatency = -1;
@@ -135,17 +136,26 @@ void GateProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     }
 
     float inPk = 0.f, keyPk = 0.f; double grMax = 0.0;
-    for (int i = 0; i < n; ++i)
+    for (int off = 0; off < n; off += kChunk)
     {
-        const float x[2] { ch[0][i], ch[1][i] }, k[2] { kc[0][i], kc[1][i] };
-        float y[2], kf[2];
-        grMax = std::max (grMax, gate.process (x, k, numCh, y, kf));
-        for (int c = 0; c < numCh; ++c)
+        const int m = std::min (kChunk, n - off);
+        analyzerPre.push (kc[0] + off, kc[1] + off, m);   // antes de procesar: en modo interno kc apunta al mismo buffer que se sobrescribe
+        for (int i = 0; i < m; ++i)
         {
-            inPk = std::max (inPk, std::fabs (x[c]));
-            keyPk = std::max (keyPk, std::fabs (kf[c]));
-            ch[c][i] = listen ? kf[c] : y[c];
+            const int j = off + i;
+            const float x[2] { ch[0][j], ch[1][j] }, k[2] { kc[0][j], kc[1][j] };
+            float y[2], kf[2];
+            grMax = std::max (grMax, gate.process (x, k, numCh, y, kf));
+            for (int c = 0; c < numCh; ++c)
+            {
+                inPk = std::max (inPk, std::fabs (x[c]));
+                keyPk = std::max (keyPk, std::fabs (kf[c]));
+                ch[c][j] = listen ? kf[c] : y[c];
+            }
+            keyPost[0][i] = kf[0];
+            keyPost[1][i] = numCh > 1 ? kf[1] : kf[0];
         }
+        analyzerPost.push (keyPost[0], keyPost[1], m);
     }
     grDb.store ((float) grMax, std::memory_order_relaxed);
     inDb.store (juce::Decibels::gainToDecibels (inPk, -120.f), std::memory_order_relaxed);

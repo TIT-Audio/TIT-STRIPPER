@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "GateCore.h"
+#include "SpectrumAnalyzer.h"
 
 namespace titg
 {
@@ -40,6 +41,8 @@ public:
     std::atomic<float> grDb { 0.f };                       // atenuacion actual (dB, >= 0)
     std::atomic<float> inDb { -120.f }, keyDb { -120.f };  // picos de entrada y de la senal de deteccion (dBFS)
     std::atomic<bool> extScActive { false };
+    SpectrumAnalyzer analyzerPre, analyzerPost;            // senal de deteccion sin filtrar / filtrada (HP, LP y EQ)
+    std::atomic<double> currentSampleRate { 44100.0 };
 
 private:
     titg::Settings readSettings() const;
@@ -47,6 +50,8 @@ private:
     titg::Gate gate;
     double fs = 44100.0;
     int lastLatency = -1;
+    static constexpr int kChunk = 4096;
+    float keyPost[2][kChunk] {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GateProcessor)
 };

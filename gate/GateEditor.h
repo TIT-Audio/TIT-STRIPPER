@@ -2,6 +2,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "GateProcessor.h"
 
+class ScEqView;
+
 class GateEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -39,10 +41,11 @@ private:
     juce::Image background;
     double scale = 1.0;
 
-    static constexpr int kNumKnobs = 20;
+    static constexpr int kNumKnobs = 9;
     std::array<Knob, kNumKnobs> knobs;
     juce::ComboBox scSrcBox;
     juce::ToggleButton listenBtn { "SC Listen" };
+    std::unique_ptr<ScEqView> eqView;
     juce::ToggleButton scEqBtn { "SC EQ On" };
     std::unique_ptr<ButtonAtt> scEqAtt;
     juce::Label scWarn;

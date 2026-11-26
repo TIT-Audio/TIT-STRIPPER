@@ -882,8 +882,20 @@ void TitQEditor::mouseDown (const juce::MouseEvent& e)
     const int hit = findNode (e.position);
     if (hit < 0 && displayArea().contains (e.position))
     {
-        // UN SOLO CLIC en una zona vacía: crea una banda en la primera posición libre (1..10) y la deja lista para arrastrar
-        const int nb = createNewBandAt (e.position);
+        // zonas de DOBLE clic (p. ej. high shelf en 12-18 kHz): los dos clics se detectan aquí mismo, sin depender del evento de
+        // doble clic del sistema (que se pierde si el ratón se mueve un píxel o si el segundo clic llega muy rápido)
+        int nb = -1;
+        const int zi = zoneAt (e.position);
+        if (zi >= 0 && proc.clickConfig.zones[zi].clicks == 2)
+        {
+            const auto now = juce::Time::getMillisecondCounter();
+            const bool second = (now - lastZoneClickMs) < 600 && lastZoneClickPos.getDistanceFrom (e.position) < 16.0f
+                                && (now - lastCreateMs) >= 600;
+            if (second) { lastZoneClickMs = 0; nb = createZoneBand (e.position, zi); }
+            else        { lastZoneClickMs = now; lastZoneClickPos = e.position; }
+        }
+        else
+            nb = createNewBandAt (e.position);   // UN SOLO CLIC en una zona vacía: crea una banda en la primera posición libre (1..10)
         if (nb >= 0)
         {
             lastCreateMs = juce::Time::getMillisecondCounter();

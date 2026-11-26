@@ -39,6 +39,26 @@ inline double staticGr (double levelDb, const Settings& s, bool open) noexcept
     return std::min (std::max (0.0, s.range), under * (std::max (1.0, s.ratio) - 1.0));
 }
 
+// Respuesta (dB) del filtrado de la senal de deteccion: paso alto + paso bajo + EQ de 3 bandas (si esta activo). La usa el editor para dibujar la curva.
+inline double scResponseDb (const Settings& s, double f, double fs) noexcept
+{
+    const double w = 2.0 * 3.14159265358979323846 * std::min (f, 0.499 * fs) / fs;
+    titq::Biquad b;
+    double db = 0.0;
+    auto add = [&] (const titq::Biquad::Coeffs& c) { b.set (c); db += 20.0 * std::log10 (std::max (1.0e-9, b.magnitude (w))); };
+    add (titq::Biquad::highpass (fs, std::clamp (s.hpHz, 10.0, 0.45 * fs), 0.7071));
+    add (titq::Biquad::lowpass  (fs, std::clamp (s.lpHz, 100.0, 0.45 * fs), 0.7071));
+    if (s.eqOn)
+        for (int i = 0; i < 3; ++i)
+        {
+            const double fc = std::clamp (s.eqF[i], 20.0, 0.45 * fs), q = std::max (0.1, s.eqQ[i]);
+            add (i == 0 ? titq::Biquad::lowShelf (fs, fc, q, s.eqG[i])
+               : i == 1 ? titq::Biquad::peak (fs, fc, q, s.eqG[i])
+                        : titq::Biquad::highShelf (fs, fc, q, s.eqG[i]));
+        }
+    return db;
+}
+
 class Gate
 {
 public:

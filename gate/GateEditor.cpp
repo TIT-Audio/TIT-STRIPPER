@@ -3,10 +3,8 @@
 
 static const juce::Colour kPink  (0xffff2e9a);
 static const juce::Colour kPink2 (0xffff7ac0);
-static const char* kIds[]   = { "thr", "range", "ratio", "attack", "hold", "release", "hyst", "look", "schp", "sclp", "link",
-                              "ef1", "eg1", "eq1", "ef2", "eg2", "eq2", "ef3", "eg3", "eq3" };
-static const char* kNames[] = { "Threshold", "Range", "Ratio", "Attack", "Hold", "Release", "Hysteresis", "Lookahead", "SC High-pass", "SC Low-pass", "Stereo Link",
-                              "Low Freq", "Low Gain", "Low Q", "Mid Freq", "Mid Gain", "Mid Q", "High Freq", "High Gain", "High Q" };
+static const char* kIds[]   = { "thr", "range", "ratio", "attack", "hold", "release", "hyst", "look", "link" };
+static const char* kNames[] = { "Threshold", "Range", "Ratio", "Attack", "Hold", "Release", "Hysteresis", "Lookahead", "Stereo Link" };
 
 void GateEditor::Laf::drawLabel (juce::Graphics& g, juce::Label& l)
 {
@@ -65,6 +63,241 @@ GateEditor::Laf::Laf()
     setColour (juce::PopupMenu::highlightedBackgroundColourId, kPink);
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// EQ grafico del sidechain: analizador FFT de la senal de deteccion + curva + nodos arrastrables.
+// Nodos: paso alto y paso bajo (solo frecuencia) y 3 bandas (low shelf, campana, high shelf: frecuencia y ganancia; rueda = Q).
+// ---------------------------------------------------------------------------------------------
+class ScEqView : public juce::Component, private juce::Timer
+{
+public:
+    explicit ScEqView (GateProcessor& p) : proc (p) { startTimerHz (30); }
+    ~ScEqView() override { stopTimer(); }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto r = getLocalBounds().toFloat();
+        const float s = (float) (r.getWidth() / 980.0);
+        g.setColour (juce::Colours::black.withAlpha (0.32f));
+        g.fillRoundedRectangle (r, 8.f * s);
+        g.setColour (kPink.withAlpha (0.6f));
+        g.drawRoundedRectangle (r.reduced (0.6f), 8.f * s, 1.2f);
+
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            g.reduceClipRegion (r.toNearestInt());
+            juce::Path lp, fp, lq, fq;
+            buildPath (preDb, lp, fp);
+            buildPath (postDb, lq, fq);
+            g.setColour (juce::Colours::white.withAlpha (0.06f)); g.fillPath (fp);
+            g.setColour (juce::Colours::white.withAlpha (0.22f)); g.strokePath (lp, juce::PathStrokeType (1.f * s));
+            g.setColour (kPink.withAlpha (0.16f)); g.fillPath (fq);
+            g.setColour (kPink2.withAlpha (0.55f)); g.strokePath (lq, juce::PathStrokeType (1.2f * s));
+        }
+
+        for (float f : { 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f })
+        {
+            const bool strong = (f == 100.f || f == 1000.f || f == 10000.f);
+            g.setColour (juce::Colours::white.withAlpha (strong ? 0.14f : 0.06f));
+            g.drawVerticalLine ((int) freqToX (f), r.getY(), r.getBottom());
+        }
+        g.setColour (juce::Colours::white.withAlpha (0.10f));
+        for (float db : { -12.f, 12.f }) g.drawHorizontalLine ((int) dbToY (db), r.getX(), r.getRight());
+        g.setColour (juce::Colours::white.withAlpha (0.28f));
+        g.drawHorizontalLine ((int) dbToY (0.f), r.getX(), r.getRight());
+        g.setFont (10.f * s);
+        g.setColour (juce::Colours::white.withAlpha (0.6f));
+        for (float db : { -12.f, 0.f, 12.f })
+            g.drawText (juce::String (db > 0 ? "+" : "") + juce::String ((int) db), (int) r.getX() + 4, (int) dbToY (db) - 12, 30, 12, juce::Justification::left);
+        for (auto f : { 100.f, 1000.f, 10000.f })
+            g.drawText (f >= 1000.f ? juce::String ((int) (f / 1000.f)) + "k" : juce::String ((int) f), (int) freqToX (f) - 15, (int) (r.getBottom() - 13.f * s), 30, 12, juce::Justification::centred);
+
+        // curva (lo que "oye" el detector)
+        const auto st = settings();
+        const double fs = proc.currentSampleRate.load();
+        juce::Path curve;
+        const int steps = juce::jmax (2, (int) (r.getWidth() / 2));
+        for (int i = 0; i <= steps; ++i)
+        {
+            const float x = r.getX() + r.getWidth() * (float) i / (float) steps;
+            const float y = dbToY ((float) juce::jlimit (-kRange * 1.5, kRange * 1.5, titg::scResponseDb (st, (double) xToFreq (x), fs)));
+            if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+        }
+        g.setColour (kPink.withAlpha (st.eqOn ? 0.25f : 0.12f)); g.strokePath (curve, juce::PathStrokeType (7.f * s));
+        g.setColour (st.eqOn ? kPink2 : kPink2.withAlpha (0.55f)); g.strokePath (curve, juce::PathStrokeType (2.2f * s));
+
+        // nodos
+        for (int n = 0; n < kNodes; ++n)
+        {
+            const auto p = nodePos (n);
+            const bool sel = (n == dragNode);
+            const float rad = (sel ? 7.f : 5.5f) * s;
+            g.setColour (juce::Colours::black.withAlpha (0.6f)); g.fillEllipse (p.x - rad - 1.5f, p.y - rad - 1.5f, 2 * rad + 3.f, 2 * rad + 3.f);
+            g.setColour (n < 2 ? kPink2.withAlpha (0.9f) : kPink); g.fillEllipse (p.x - rad, p.y - rad, 2 * rad, 2 * rad);
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        dragNode = nodeAt (e.position);
+        if (dragNode < 0) return;
+        if (dragNode >= 2) { setBool ("sceq", true); }
+        begin (dragNode);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (dragNode < 0) return;
+        const float f = xToFreq (juce::jlimit (getLocalBounds().toFloat().getX(), getLocalBounds().toFloat().getRight(), e.position.x));
+        if (dragNode == 0)      setParam ("schp", f);
+        else if (dragNode == 1) setParam ("sclp", f);
+        else
+        {
+            const int b = dragNode - 1;
+            setParam (juce::String ("ef") + juce::String (b), f);
+            setParam (juce::String ("eg") + juce::String (b), yToDb (e.position.y));
+        }
+    }
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (dragNode >= 0) end (dragNode);
+        dragNode = -1;
+    }
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        const int n = nodeAt (e.position);
+        if (n < 0) return;
+        begin (n);
+        if (n == 0) setParam ("schp", 20.f);
+        else if (n == 1) setParam ("sclp", 20000.f);
+        else setParam (juce::String ("eg") + juce::String (n - 1), 0.f);
+        end (n);
+    }
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        const int n = nodeAt (e.position);
+        if (n < 2) return;
+        const auto id = juce::String ("eq") + juce::String (n - 1);
+        if (auto* p = proc.apvts.getParameter (id))
+        {
+            const float q = proc.apvts.getRawParameterValue (id)->load();
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (p->convertTo0to1 (q * std::exp (w.deltaY * 1.5f)));
+            p->endChangeGesture();
+            setBool ("sceq", true);
+        }
+    }
+
+private:
+    static constexpr int kNodes = 5;
+    static constexpr float kRange = 18.f;
+    GateProcessor& proc;
+    std::array<float, SpectrumAnalyzer::kBins> preDb {}, postDb {}, scratch {};
+    int dragNode = -1;
+
+    float freqToX (float f) const { const auto r = getLocalBounds().toFloat(); return r.getX() + r.getWidth() * (float) (std::log (f / 20.0) / std::log (21000.0 / 20.0)); }
+    float xToFreq (float x) const { const auto r = getLocalBounds().toFloat(); return (float) (20.0 * std::pow (21000.0 / 20.0, juce::jlimit (0.0, 1.0, (double) ((x - r.getX()) / r.getWidth())))); }
+    float dbToY (float db) const { const auto r = getLocalBounds().toFloat(); return r.getCentreY() - db / (kRange * 1.5f) * (r.getHeight() * 0.5f); }
+    float yToDb (float y) const { const auto r = getLocalBounds().toFloat(); return juce::jlimit (-kRange, kRange, (r.getCentreY() - y) / (r.getHeight() * 0.5f) * (kRange * 1.5f)); }
+
+    float raw (const char* id) const { return proc.apvts.getRawParameterValue (id)->load(); }
+    float raw (const juce::String& id) const { return proc.apvts.getRawParameterValue (id)->load(); }
+
+    titg::Settings settings() const
+    {
+        titg::Settings s;
+        s.hpHz = raw ("schp"); s.lpHz = raw ("sclp"); s.eqOn = raw ("sceq") > 0.5f;
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto k = juce::String (i + 1);
+            s.eqF[i] = raw ("ef" + k); s.eqG[i] = raw ("eg" + k); s.eqQ[i] = raw ("eq" + k);
+        }
+        return s;
+    }
+
+    juce::Point<float> nodePos (int n) const
+    {
+        if (n == 0) return { freqToX (raw ("schp")), dbToY (0.f) };
+        if (n == 1) return { freqToX (raw ("sclp")), dbToY (0.f) };
+        const auto k = juce::String (n - 1);
+        return { freqToX (raw ("ef" + k)), dbToY (raw ("eg" + k)) };
+    }
+    int nodeAt (juce::Point<float> p) const
+    {
+        int best = -1; float bd = 16.f * (float) (getWidth() / 980.0) + 4.f;
+        for (int n = 0; n < kNodes; ++n)
+        {
+            const float d = nodePos (n).getDistanceFrom (p);
+            if (d < bd) { bd = d; best = n; }
+        }
+        return best;
+    }
+    juce::StringArray idsOf (int n) const
+    {
+        if (n == 0) return { "schp" };
+        if (n == 1) return { "sclp" };
+        const auto k = juce::String (n - 1);
+        return { "ef" + k, "eg" + k };
+    }
+    void begin (int n) { for (auto& id : idsOf (n)) if (auto* p = proc.apvts.getParameter (id)) p->beginChangeGesture(); }
+    void end (int n)   { for (auto& id : idsOf (n)) if (auto* p = proc.apvts.getParameter (id)) p->endChangeGesture(); }
+    void setParam (const juce::String& id, float v)
+    {
+        if (auto* p = proc.apvts.getParameter (id)) p->setValueNotifyingHost (p->convertTo0to1 (v));
+    }
+    void setBool (const char* id, bool v)
+    {
+        if (auto* p = proc.apvts.getParameter (id)) if ((p->getValue() > 0.5f) != v) p->setValueNotifyingHost (v ? 1.f : 0.f);
+    }
+
+    void buildPath (const std::array<float, SpectrumAnalyzer::kBins>& db, juce::Path& line, juce::Path& fill) const
+    {
+        const auto r = getLocalBounds().toFloat();
+        const float s = (float) (r.getWidth() / 980.0);
+        const double fs = proc.currentSampleRate.load();
+        const double binHz = fs / (double) SpectrumAnalyzer::kSize;
+        const float bottom = r.getBottom();
+        bool started = false;
+        float lastX = r.getX();
+        for (float x = r.getX(); x <= r.getRight(); x += 2.f * s)
+        {
+            const double f0 = xToFreq (x - s), f1 = xToFreq (x + s);
+            if (f0 >= 0.5 * fs) break;
+            const double b0 = f0 / binHz, b1 = f1 / binHz;
+            float v;
+            if (b1 - b0 < 1.0)
+            {
+                const double b = 0.5 * (b0 + b1);
+                const int i = juce::jlimit (0, SpectrumAnalyzer::kBins - 2, (int) b);
+                const float fr = (float) (b - i);
+                v = db[(size_t) i] * (1.f - fr) + db[(size_t) i + 1] * fr;
+            }
+            else
+            {
+                const int i0 = juce::jmax (0, (int) b0), i1 = juce::jmin (SpectrumAnalyzer::kBins - 1, (int) std::ceil (b1));
+                v = -200.f;
+                for (int i = i0; i <= i1; ++i) v = juce::jmax (v, db[(size_t) i]);
+            }
+            v += 4.5f * (float) std::log2 (0.5 * (f0 + f1) / 1000.0);   // inclinacion de 4.5 dB/oct: ruido rosa se ve plano
+            const float t = juce::jlimit (0.f, 1.f, (v + 100.f) / 85.f);
+            const float y = bottom - t * r.getHeight();
+            if (! started) { line.startNewSubPath (x, y); fill.startNewSubPath (x, bottom); fill.lineTo (x, y); started = true; }
+            else           { line.lineTo (x, y); fill.lineTo (x, y); }
+            lastX = x;
+        }
+        if (started) { fill.lineTo (lastX, bottom); fill.closeSubPath(); }
+    }
+
+    void timerCallback() override
+    {
+        if (! isShowing()) return;
+        proc.analyzerPre.computeDb (scratch);
+        for (size_t i = 0; i < preDb.size(); ++i) preDb[i] = scratch[i];
+        proc.analyzerPost.computeDb (scratch);
+        for (size_t i = 0; i < postDb.size(); ++i) postDb[i] = scratch[i];
+        repaint();
+    }
+};
+
 GateEditor::GateEditor (GateProcessor& p) : AudioProcessorEditor (&p), proc (p)
 {
     setLookAndFeel (&laf);
@@ -83,6 +316,8 @@ GateEditor::GateEditor (GateProcessor& p) : AudioProcessorEditor (&p), proc (p)
     }
     scSrcBox.addItemList (juce::StringArray { "SC: Internal", "SC: External" }, 1);
     addAndMakeVisible (scSrcBox); addAndMakeVisible (listenBtn); addAndMakeVisible (scWarn);
+    eqView = std::make_unique<ScEqView> (proc);
+    addAndMakeVisible (*eqView);
     addAndMakeVisible (scEqBtn);
     scEqAtt = std::make_unique<ButtonAtt> (proc.apvts, "sceq", scEqBtn);
     scSrcAtt  = std::make_unique<ComboAtt>  (proc.apvts, "scsrc", scSrcBox);
@@ -99,6 +334,7 @@ GateEditor::GateEditor (GateProcessor& p) : AudioProcessorEditor (&p), proc (p)
 GateEditor::~GateEditor()
 {
     stopTimer();
+    eqView.reset();
     setLookAndFeel (nullptr);
 }
 
@@ -193,17 +429,18 @@ void GateEditor::resized()
     laf.setDefaultSansSerifTypefaceName ("Arial");
     for (int i = 0; i < kNumKnobs; ++i)
     {
-        const int row = i < 6 ? 0 : i < 11 ? 1 : 2, col = i < 6 ? i : i < 11 ? i - 6 : i - 11;
-        const int x0 = row == 0 ? 530 : row == 1 ? 600 : 250;    // la segunda fila va desplazada; la tercera es el EQ del sidechain
-        const int x = S (x0 + col * (row == 2 ? 86 : 92));
-        int y = S (row == 0 ? 130 : row == 1 ? 330 : 495);
+        const int row = i < 6 ? 0 : 1, col = i < 6 ? i : i - 6;
+        const int x0 = row == 0 ? 530 : 600;                  // la segunda fila va desplazada
+        const int x = S (x0 + col * 92);
+        const int y = S (row == 0 ? 130 : 330);
         auto& k = knobs[(size_t) i];
         k.l.setFont (juce::Font (juce::FontOptions (12.f * (float) scale)));
         k.l.setBounds (x, y - S (20), S (88), S (18));
-        k.s.setBounds (x, y, S (row == 2 ? 82 : 88), S (row == 2 ? 96 : 100));
+        k.s.setBounds (x, y, S (88), S (100));
     }
+    eqView->setBounds (S (60), S (466), S (980), S (138));
     scSrcBox.setBounds (S (60), S (400), S (150), S (28));
     listenBtn.setBounds (S (225), S (400), S (130), S (28));
-    scEqBtn.setBounds (S (60), S (505), S (150), S (28));
+    scEqBtn.setBounds (S (370), S (400), S (130), S (28));
     scWarn.setBounds (S (60), S (436), S (300), S (22));
 }
