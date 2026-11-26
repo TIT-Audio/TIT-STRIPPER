@@ -76,6 +76,7 @@ void TitCompProcessor::prepareToPlay (double sampleRate, int)
     for (auto& b : bal) b.reset();
     for (auto& c : colorTimbre) c.reset();
     det = { 0.0, 0.0 };
+    for (auto& pe : peakEst) pe.reset();
     scBuf.setSize (2, kChunk);
     lastOutGain = juce::Decibels::decibelsToGain (P (apvts, "out"));
     for (auto& b : bands) { b.eq.reset(); b.wasOn = false; b.lastFs = 0.0; }
@@ -165,7 +166,7 @@ void TitCompProcessor::processCore (juce::dsp::AudioBlock<float>& m, juce::dsp::
         for (int ch = 0; ch < numCh; ++ch)
         {
             const double x = (double) sc.getSample (ch, i);
-            const double p = x * x;
+            const double p = s.mode == VARI ? peakEst[(size_t) ch].power (x) : x * x;
             det[(size_t) ch] = (p > det[(size_t) ch]) ? aDA * det[(size_t) ch] + (1.0 - aDA) * p
                                                       : aDR * det[(size_t) ch] + (1.0 - aDR) * p;
             lev[ch] = 10.0 * std::log10 (det[(size_t) ch] + 1.0e-12) + dt.offsetDb;

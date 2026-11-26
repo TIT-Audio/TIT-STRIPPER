@@ -73,6 +73,7 @@ private:
     std::array<titc::Timbre, 2> colorTimbre;
     titq::Biquad muHp, muHp1;   // filtro de sidechain de TIT MU: 2o orden + 1er orden (medido en un compresor variable-mu de referencia)
     std::array<double, 2> det { 0.0, 0.0 };
+    std::array<titc::PeakEst, 2> peakEst;
 
     juce::AudioBuffer<float> scBuf;
     float lastOutGain = 1.f;

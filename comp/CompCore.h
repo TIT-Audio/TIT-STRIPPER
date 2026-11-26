@@ -303,18 +303,32 @@ inline DetectorTimes detectorFor (int mode) noexcept
         case FET:  return { 0.02, 3.0,  0.0 };
         case FETB: return { 0.02, 3.0,  0.0 };
         case OPTO: return { 10.0, 10.0, 3.01 };
-        case VARI: return { 1.0, 20.0, 0.52 };   // medido: la reducción no depende de la frecuencia (31 Hz..12 kHz); detector de pico con subida de 1 ms y bajada de 20 ms
+        case VARI: return { 1.0, 20.0, 0.39 };   // medido: la reducción no depende de la frecuencia (31 Hz..12 kHz); detector de pico con subida de 1 ms y bajada de 20 ms
         case MU:   return { 1.0, 1.0,  3.01 };
         case DXX:  return { 35.0, 35.0, 3.01 };   // compresor VCA RMS de referencia: detector RMS verdadero (~35 ms en potencia); el ataque dependiente del salto y el release de ~125 dB/s salen de aqui
         default:   return { 0.05, 5.0,  0.0 };
     }
 }
 
+// Potencia del detector con pico entre muestras (interpolacion cubica a medio camino): a 8 o 12 kHz el pico no cae en una muestra y
+// el detector de muestras lee hasta 1.3 dB de menos o de mas segun la fase. Se usa en FAIR, cuya reduccion es plana en frecuencia.
+struct PeakEst
+{
+    double x1 = 0.0, x2 = 0.0, x3 = 0.0;
+    void reset() noexcept { x1 = x2 = x3 = 0.0; }
+    inline double power (double x) noexcept
+    {
+        const double m = (-x3 + 9.0 * x2 + 9.0 * x1 - x) * 0.0625;
+        x3 = x2; x2 = x1; x1 = x;
+        return std::max (x * x, m * m);
+    }
+};
+
 struct Ballistics
 {
-    double e = 0.0, ef = 0.0, es = 0.0, mem = 0.0, p1 = 0.0, p2 = 0.0;
+    double e = 0.0, ef = 0.0, es = 0.0, mem = 0.0, p1 = 0.0, p2 = 0.0, p3 = 0.0;
     int hold = 0;
-    void reset() noexcept { e = ef = es = mem = p1 = p2 = 0.0; hold = 0; }
+    void reset() noexcept { e = ef = es = mem = p1 = p2 = p3 = 0.0; hold = 0; }
 };
 
 struct Coefs
@@ -327,7 +341,7 @@ struct Coefs
     bool vm = false;                         // variable-mu con memoria (Time Constant 5 y 6): la parte lenta de la reducción se carga mientras se comprime
     double smax = 0.7, chg = 0.0, tsMin = 4.0, tsMax = 4.0;
     bool vatk = false;                       // variable-mu: ataque de dos constantes (parte rapida + cola), medido
-    double wA1 = 0.5, aA1 = 0.0, aA2 = 0.0;
+    double wA1 = 0.5, aA1 = 0.0, aA2 = 0.0, wA3 = 0.0, aA3 = 0.0;   // wA3: cola lenta del ataque (solo TC5 y TC6)
 };
 
 inline Coefs makeCoefs (const Settings& s, double fs) noexcept
@@ -408,6 +422,9 @@ inline Coefs makeCoefs (const Settings& s, double fs) noexcept
             c.wA1 = 0.75 + 0.15 * u;
             c.aA1 = std::exp (-1.0 / ((0.3 - 0.2 * u) * 1.0e-3 * fs));
             c.aA2 = std::exp (-1.0 / ((3.5 + 1.5 * u) * 1.0e-3 * fs));
+            // cola lenta medida en rafagas de 0.2 y 2 s: en TC5 y TC6 la reduccion tarda ~2 s en llegar del todo (1.7 % y 3.3 % del total)
+            c.wA3 = tc == 5 ? 0.0165 : tc == 6 ? 0.033 : 0.0;
+            c.aA3 = std::exp (-1.0 / (2.0 * fs));
         }
         if (tc <= 4)
         {
@@ -456,6 +473,11 @@ inline double step (Ballistics& b, double g, const Coefs& c) noexcept
         b.p1 = g > b.p1 ? c.aA1 * b.p1 + (1.0 - c.aA1) * g : g;
         b.p2 = g > b.p2 ? c.aA2 * b.p2 + (1.0 - c.aA2) * g : g;
         g = c.wA1 * b.p1 + (1.0 - c.wA1) * b.p2;
+        if (c.wA3 > 0.0)
+        {
+            b.p3 = g > b.p3 ? c.aA3 * b.p3 + (1.0 - c.aA3) * g : g;
+            g = (1.0 - c.wA3) * g + c.wA3 * b.p3;
+        }
     }
     if (c.vm)
     {

@@ -145,6 +145,17 @@ int main()
         check (t90[0] > 0 && t90[1] > 0 && t90[0] < 12.0 && t90[1] < 16.0, "ataque FAIR 90 %", t90[0], 12.0);
     }
 
+    // ---- FAIR: el detector con pico entre muestras lee igual un tono de 8 kHz (6 muestras por ciclo) y uno de 1 kHz ----
+    {
+        auto peakDb = [] (double f)
+        {
+            titc::PeakEst pe; double mx = 0.0; const double fs = 48000.0;
+            for (int i = 0; i < 4800; ++i) mx = std::max (mx, pe.power (0.5 * std::sin (2.0 * 3.14159265358979323846 * f * i / fs)));
+            return 10.0 * std::log10 (mx / 0.25);
+        };
+        const double d = peakDb (8000.0) - peakDb (1000.0);
+        check (std::abs (d) < 0.35, "detector FAIR plano en 8 kHz", d, 0.0);
+    }
     if (failures == 0) std::printf ("Todas las pruebas del nucleo han pasado.\n");
     return failures == 0 ? 0 : 1;
 }
