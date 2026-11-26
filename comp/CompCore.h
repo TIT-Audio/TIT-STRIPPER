@@ -72,7 +72,7 @@ inline void constrain (Settings& s) noexcept
             s.attackMs = std::clamp (s.attackMs, 0.02, 0.8); s.releaseMs = std::clamp (s.releaseMs, 50.0, 1100.0);
             s.ratio = snapLog (s.ratio, fetRat, 4); s.knee = 3.0; s.holdMs = 0.0; break;
         case OPTO:
-            s.attackMs = 10.0; s.releaseMs = 1500.0; s.ratio = 4.34; s.knee = 7.28; s.holdMs = 0.0; break;   // curva medida (Peak Reduction 35/50/68/85, tonos de 1 kHz): ratio 4.3:1, rodilla 7.3 dB, error 0.2 dB
+            s.attackMs = 0.5; s.releaseMs = 1500.0; s.ratio = 4.34; s.knee = 7.28; s.holdMs = 0.0; break;   // curva medida (Peak Reduction 35/50/68/85, tonos de 1 kHz): ratio 4.3:1, rodilla 7.3 dB, error 0.2 dB
         case MU:
             s.attackMs = 1.0; s.releaseMs = 500.0; s.ratio = 2.0; s.knee = 20.0; s.holdMs = 0.0;
             s.muTrim = std::clamp (s.muTrim, -24.0, 24.0); s.muThr = std::clamp (s.muThr, 0.0, 10.0); s.muAtt = std::clamp (std::round (s.muAtt), 0.0, 4.0);
@@ -301,7 +301,7 @@ inline DetectorTimes detectorFor (int mode) noexcept
         case VCA:  return { 1.0, 1.0,  3.01 };
         case FET:  return { 0.02, 3.0,  0.0 };
         case FETB: return { 0.02, 3.0,  0.0 };
-        case OPTO: return { 10.0, 10.0, 3.01 };
+        case OPTO: return { 2.0, 2.0, 3.01 };   // ajustado a la prueba B (ataque ~70 % en 5 ms) sin romper la curva estatica
         case VARI: return { 1.0, 20.0, 0.39 };   // medido: la reducción no depende de la frecuencia (31 Hz..12 kHz); detector de pico con subida de 1 ms y bajada de 20 ms
         case MU:   return { 1.0, 1.0,  3.01 };
         case DXX:  return { 35.0, 35.0, 3.01 };   // compresor VCA RMS de referencia: detector RMS verdadero (~35 ms en potencia); el ataque dependiente del salto y el release de ~125 dB/s salen de aqui
