@@ -2,6 +2,10 @@
 
 **Free channel strip (VST3 for Windows and macOS, AU for macOS)** with three modules in one plugin: **Gate/Expander**, **TIT COMP** (the compressor with all its modes) and **TIT Q** (the 10-band dynamic equaliser). Reorder the modules as you like and save the whole strip as a preset. No registration, no ads, no limits.
 
+![TIT STRIPPER, compressor module](docs/tit-stripper-comp.jpg)
+
+![TIT STRIPPER, gate / expander module](docs/tit-stripper-gate.jpg)
+
 ## How it works
 - The top bar shows the three modules in chain order. Each has an **On/Off** button, a name button that shows its window and two arrows **< >** to move it in the chain. All six orders are allowed.
 - **Presets** of the whole strip (three modules, On/Off and order): drop-down, *Save* button and the `...` menu to save or load anywhere (USB drive, cloud) or open the presets folder (`Documents/TIT STRIPPER/Presets`, `.titstrip`). "Initialize" restores factory values. Each module keeps its own presets too.
