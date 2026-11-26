@@ -145,10 +145,11 @@ jobs:
         with:
           name: TITSTRIPPER-all
           path: TITSTRIPPER/
-      - name: Publish release (solo con tag, p. ej. v0.1.0)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release (con un tag v* o con [release] en el mensaje del commit)
+        if: startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
-          name: TIT STRIPPER ${{ github.ref_name }}
+          name: TIT STRIPPER v0.1.0
+          tag_name: v0.1.0
           body_path: RELEASE_NOTES.md
           files: TITSTRIPPER/*.zip
