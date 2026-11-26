@@ -86,7 +86,7 @@ jobs:
           $v = Get-ChildItem -Path build -Recurse -Directory -Filter "*.vst3" | Select-Object -First 1
           Compress-Archive -Path $v.FullName -DestinationPath "TITSTRIPPER-Windows-VST3.zip"
 
-      - name: Check architectures (macOS: the binary must contain arm64 and x86_64)
+      - name: "Check architectures (the macOS binary must contain arm64 and x86_64)"
         if: runner.os == 'macOS'
         run: |
           for b in $(find build -type f -path "*.vst3/Contents/MacOS/*") $(find build -type f -path "*.component/Contents/MacOS/*"); do
