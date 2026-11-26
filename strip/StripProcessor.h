@@ -44,6 +44,10 @@ public:
 
     // orden de la cadena: permutacion de {Gate, Comp, Eq}
     static const std::array<std::array<int, 3>, 6>& orders();
+    // orden con el que arranca una instancia nueva: archivo config.txt en los datos de usuario (se edita a mano o desde el menu "...")
+    static juce::File configFile();
+    static int configuredOrderIndex();
+    static void saveConfiguredOrderIndex (int idx);
     std::array<int, 3> currentOrder() const;
     void setOrder (const std::array<int, 3>& o);
     bool isModuleOn (int m) const { return apvts.getRawParameterValue (onId (m))->load() > 0.5f; }

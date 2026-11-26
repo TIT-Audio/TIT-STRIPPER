@@ -24,3 +24,12 @@ macOS sin firmar: `xattr -cr "TIT STRIPPER.vst3"` (o .component).
 
 ## Licencia
 TIT STRIPPER es gratuito y se distribuye bajo la licencia GNU AGPLv3 (ver el archivo LICENSE). Está construido con JUCE 8. El código fuente está disponible en este repositorio.
+
+## Orden de arranque (archivo de configuración)
+El orden de los módulos con el que arranca una instancia nueva se guarda en `config.txt`
+(Windows: `%APPDATA%\TIT Audio\TIT STRIPPER\`; macOS: `~/Library/Application Support/TIT Audio/TIT STRIPPER/`).
+Se cambia desde el menú `...` → "Start order for new instances" / "Use the current order as start order", o editando el archivo:
+
+    order = EQ, GATE, COMP
+
+Los proyectos ya guardados conservan su propio orden.

@@ -1,10 +1,36 @@
 #include "StripProcessor.h"
 #include "StripEditor.h"
+#include "StripConfig.h"
 
 const std::array<std::array<int, 3>, 6>& StripProcessor::orders()
 {
     static const std::array<std::array<int, 3>, 6> o { { { 0, 1, 2 }, { 0, 2, 1 }, { 1, 0, 2 }, { 1, 2, 0 }, { 2, 0, 1 }, { 2, 1, 0 } } };
     return o;
+}
+
+// Archivo de configuracion: <datos de usuario>/TIT Audio/TIT STRIPPER/config.txt (se crea la primera vez con el orden por defecto)
+juce::File StripProcessor::configFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("TIT Audio").getChildFile ("TIT STRIPPER").getChildFile ("config.txt");
+}
+
+int StripProcessor::configuredOrderIndex()
+{
+    const auto file = configFile();
+    if (! file.existsAsFile())
+    {
+        saveConfiguredOrderIndex (0);
+        return 0;
+    }
+    return stripcfg::parseOrderIndex (file.loadFileAsString().toStdString());
+}
+
+void StripProcessor::saveConfiguredOrderIndex (int idx)
+{
+    const auto file = configFile();
+    file.getParentDirectory().createDirectory();
+    file.replaceWithText (juce::String (stripcfg::textForOrder (idx)));
 }
 
 static juce::AudioProcessorValueTreeState::ParameterLayout createStripLayout()
@@ -13,7 +39,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createStripLayout()
     juce::StringArray names;
     for (auto& o : StripProcessor::orders())
         names.add (juce::String (StripProcessor::moduleName (o[0])) + " > " + StripProcessor::moduleName (o[1]) + " > " + StripProcessor::moduleName (o[2]));
-    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "order", 1 }, "Chain Order", names, 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "order", 1 }, "Chain Order", names, StripProcessor::configuredOrderIndex()));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "gate_on", 1 }, "Gate On", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "comp_on", 1 }, "Comp On", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "eq_on", 1 },   "EQ On", true));

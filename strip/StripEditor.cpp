@@ -228,12 +228,32 @@ void StripEditor::showPresetMenu()
     m.addItem (3, "Open the presets folder");
     m.addSeparator();
     m.addItem (4, "Initialize (default settings)");
+    m.addSeparator();
+    // orden de arranque: se guarda en config.txt y lo usan las instancias nuevas
+    juce::PopupMenu startMenu;
+    const int cur = StripProcessor::configuredOrderIndex();
+    for (int i = 0; i < 6; ++i)
+    {
+        const auto& o = StripProcessor::orders()[(size_t) i];
+        startMenu.addItem (100 + i, juce::String (StripProcessor::moduleName (o[0])) + " > " + StripProcessor::moduleName (o[1]) + " > " + StripProcessor::moduleName (o[2]), true, i == cur);
+    }
+    m.addSubMenu ("Start order for new instances", startMenu);
+    m.addItem (5, "Use the current order as start order");
+    m.addItem (6, "Open the settings file (config.txt)");
     juce::Component::SafePointer<StripEditor> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (menuBtn), [safe] (int r)
     {
         if (safe == nullptr || r == 0) return;
         if (r == 3) { presetDir().createDirectory(); presetDir().revealToUser(); return; }
         if (r == 4) { safe->proc.resetToDefaults(); safe->refreshOrder(); return; }
+        if (r >= 100) { StripProcessor::saveConfiguredOrderIndex (r - 100); return; }
+        if (r == 5)
+        {
+            const auto o = safe->proc.currentOrder();
+            for (int i = 0; i < 6; ++i) if (StripProcessor::orders()[(size_t) i] == o) { StripProcessor::saveConfiguredOrderIndex (i); break; }
+            return;
+        }
+        if (r == 6) { if (! StripProcessor::configFile().existsAsFile()) StripProcessor::saveConfiguredOrderIndex (0); StripProcessor::configFile().revealToUser(); return; }
         const bool saving = (r == 1);
         safe->chooser = std::make_unique<juce::FileChooser> (saving ? "Save preset" : "Load preset", presetDir(), "*.titstrip");
         const int flags = saving ? (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting)
