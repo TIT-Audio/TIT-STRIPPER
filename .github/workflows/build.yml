@@ -30,9 +30,7 @@ jobs:
       matrix:
         include:
           - { id: windows,   os: windows-latest }
-          - { id: mac-arm,   os: macos-latest }
-          # Segunda máquina macOS (Intel): tiene su propia cola. Compila igualmente universal (arm64 + x86_64).
-          # Si GitHub no da máquina a una de las dos, la otra sirve; el paquete final usa la que termine.
+          # macOS: una sola máquina (GitHub casi nunca da la de Apple Silicon). Compila universal (arm64 + x86_64) y el paso "Check architectures" comprueba que el binario trae las dos.
           - { id: mac-intel, os: macos-15-intel }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
