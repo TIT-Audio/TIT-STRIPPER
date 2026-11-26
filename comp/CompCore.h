@@ -389,7 +389,7 @@ inline Coefs makeCoefs (const Settings& s, double fs) noexcept
     {   // célula óptica: la liberación es rápida al principio y luego lenta, y depende de cuánto tiempo lleva comprimiendo
         // medido en un opto (Peak Reduction ~50): ataque en dos etapas (~75 % en 5 ms, el resto tarda ~0.3 s),
         // liberación rápida ~80 ms + cola lenta ~1.3 s (con el mando en 1500 ms), memoria pequeña
-        c.dual = true; c.wFast = 0.58;
+        c.dual = true; c.wFast = 0.85;
         c.aAs = std::exp (-1.0 / (0.3 * fs));
         c.aRf = std::exp (-1.0 / (0.08 * fs));
         c.tauSlowBase = std::max (1.0, s.releaseMs) * 0.001 * (1.3 / 1.5); c.k0 = 0.9; c.k1 = 0.2;
@@ -427,7 +427,7 @@ inline Coefs makeCoefs (const Settings& s, double fs) noexcept
         }
         if (tc <= 4)
         {
-            static const double tau[] = { 0.10, 0.30, 0.87, 1.70 };
+            static const double tau[] = { 0.10, 0.30, 0.76, 1.70 };
             c.aR = std::exp (-1.0 / (tau[tc - 1] * fs));
         }
         else
