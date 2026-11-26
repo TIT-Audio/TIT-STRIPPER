@@ -14,7 +14,7 @@ FetchContent_MakeAvailable(JUCE)
 # La imagen de fondo se incrusta en el plugin (BinaryData::background_jpg), la misma que TIT COMP y TIT Q
 juce_add_binary_data(TITSTRIPPERAssets SOURCES background.jpg)
 
-# Formatos: VST3 (Windows y macOS) y AU (Logic Pro, solo macOS). Sin AAX.
+# Formatos: VST3 (Windows y macOS) y AU (solo macOS). Sin AAX.
 set(TITSTRIPPER_FORMATS VST3)
 if(APPLE)
     list(APPEND TITSTRIPPER_FORMATS AU)
