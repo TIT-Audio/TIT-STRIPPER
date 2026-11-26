@@ -73,6 +73,35 @@ int main()
         const double off = run (false), on = run (true);
         check (off < -90.0 && on > -55.0, "EQ sidechain: el realce abre el gate", off, on);
     }
+    // pendiente de los filtros del sidechain (los mismos filtros de corte de TIT Q)
+    {
+        auto resp = [] (double slope, double f) { titg::Settings t; t.hpHz = 400.0; t.hpSlope = slope; return titg::scResponseDb (t, f, 48000.0); };
+        for (double sl : { 12.0, 24.0, 48.0 })
+        {
+            check (std::abs (resp (sl, 400.0) + 3.0) < 0.6, "HP: -3 dB en la frecuencia de corte", resp (sl, 400.0), -3.0);
+            check (std::abs (resp (sl, 200.0) + sl) < 2.5, "HP: una octava por debajo cae casi 'pendiente' dB", resp (sl, 200.0), -sl);
+        }
+        auto respLp = [] (double slope, double f) { titg::Settings t; t.lpHz = 2000.0; t.lpSlope = slope; return titg::scResponseDb (t, f, 48000.0); };
+        check (std::abs (respLp (36.0, 4000.0) + 36.0) < 2.5, "LP: una octava por encima cae casi 'pendiente' dB", respLp (36.0, 4000.0), -36.0);
+        check (std::abs (respLp (36.0, 2000.0) + 3.0) < 0.6, "LP: -3 dB en la frecuencia de corte", respLp (36.0, 2000.0), -3.0);
+
+        // en la senal: un tono de 250 Hz con el HP en 1 kHz llega mucho mas bajo con 48 dB/oct que con 12
+        auto keyPeak = [] (double slope)
+        {
+            titg::Gate g; g.prepare (48000.0); titg::Settings t; t.hpHz = 1000.0; t.hpSlope = slope; g.setSettings (t);
+            double pk = 0;
+            for (int i = 0; i < 48000; ++i)
+            {
+                const float v = 0.5f * (float) std::sin (6.283185307 * 250.0 * i / 48000.0);
+                const float x[2] { v, v }; float y[2], k[2];
+                g.process (x, x, 2, y, k);
+                if (i > 24000) pk = std::max (pk, (double) std::fabs (k[0]));
+            }
+            return pk;
+        };
+        const double p12 = keyPeak (12.0), p48 = keyPeak (48.0);
+        check (p48 < p12 * 0.01 && p12 > 0.01, "la pendiente actua sobre la senal de deteccion", p12, p48);
+    }
     if (failures == 0) std::printf ("Todas las pruebas del gate han pasado.\n");
     return failures != 0;
 }

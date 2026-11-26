@@ -11,7 +11,7 @@ Channel strip gratuito con tres módulos: **Gate/Expander**, **TIT COMP** (el co
 - La latencia que informa al DAW es la suma de la de los módulos encendidos (oversampling, lookahead).
 
 ## Módulos
-- **Gate/Expander**: Threshold, Range (hasta 90 dB), Ratio (1:1 a infinito; infinito = gate duro), Attack, Hold, Release, Hysteresis, Lookahead (hasta 10 ms), filtros de paso alto y bajo en la señal de detección, Stereo Link, sidechain interno/externo y **SC Listen**. Gráfica de la curva con el punto de trabajo y medidor de reducción.
+- **Gate/Expander**: Threshold, Range (hasta 90 dB), Ratio (1:1 a infinito; infinito = gate duro), Attack, Hold, Release, Hysteresis, Lookahead (hasta 10 ms), filtros de paso alto y bajo en la señal de detección con **pendiente ajustable de 6 a 96 dB/oct** (los mismos filtros de corte que TIT Q: mandos HP Slope y LP Slope, o la rueda del ratón sobre sus nodos en la gráfica), EQ gráfico de 3 bandas con analizador FFT, Stereo Link, sidechain interno/externo y **SC Listen**. Gráfica de la curva con el punto de trabajo y medidor de reducción.
 - **TIT COMP**: ver el repositorio TIT-COMP (modos Clean, VCA TIT, FET TIT, FET TIT B, OP TIT, FAIR TIT, TIT MU, DXX TIT y TIT DIGITAL).
 - **TIT Q**: ver el repositorio TIT-Q.
 

@@ -41,7 +41,7 @@ private:
     juce::Image background;
     double scale = 1.0;
 
-    static constexpr int kNumKnobs = 9;
+    static constexpr int kNumKnobs = 11;
     std::array<Knob, kNumKnobs> knobs;
     juce::ComboBox scSrcBox;
     juce::ToggleButton listenBtn { "SC Listen" };

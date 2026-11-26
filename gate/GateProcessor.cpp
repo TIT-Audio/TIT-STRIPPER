@@ -42,6 +42,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (makeFloat ("look",    "Lookahead",      0.f, 10.f,    0.f, 0.f,   "ms",    3, 0.1f));
     layout.add (makeFloat ("schp",    "SC High-pass",  20.f, 2000.f,  20.f, 200.f, "Hz",   2));
     layout.add (makeFloat ("sclp",    "SC Low-pass",  200.f, 20000.f, 20000.f, 3000.f, "Hz", 2));
+    layout.add (makeFloat ("schps",   "SC HP Slope",    6.f, 96.f,     12.f, 0.f,   "dB/oct", 3, 1.f));
+    layout.add (makeFloat ("sclps",   "SC LP Slope",    6.f, 96.f,     12.f, 0.f,   "dB/oct", 3, 1.f));
     layout.add (makeFloat ("link",    "Stereo Link",    0.f, 100.f,  100.f, 0.f,   "%",    3, 1.f));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sceq", 1 }, "SC EQ On", false));
     {
@@ -79,7 +81,8 @@ titg::Settings GateProcessor::readSettings() const
     s.thr = P (apvts, "thr");        s.range = P (apvts, "range");   s.ratio = P (apvts, "ratio");
     s.attackMs = P (apvts, "attack"); s.holdMs = P (apvts, "hold");  s.releaseMs = P (apvts, "release");
     s.hystDb = P (apvts, "hyst");    s.lookMs = P (apvts, "look");
-    s.hpHz = P (apvts, "schp");      s.lpHz = P (apvts, "sclp");     s.link = P (apvts, "link") * 0.01;
+    s.hpHz = P (apvts, "schp");      s.lpHz = P (apvts, "sclp");
+    s.hpSlope = P (apvts, "schps");  s.lpSlope = P (apvts, "sclps");     s.link = P (apvts, "link") * 0.01;
     s.eqOn = P (apvts, "sceq") > 0.5f;
     for (int i = 0; i < 3; ++i)
     {

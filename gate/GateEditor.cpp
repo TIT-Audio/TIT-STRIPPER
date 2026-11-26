@@ -3,8 +3,8 @@
 
 static const juce::Colour kPink  (0xffff2e9a);
 static const juce::Colour kPink2 (0xffff7ac0);
-static const char* kIds[]   = { "thr", "range", "ratio", "attack", "hold", "release", "hyst", "look", "link" };
-static const char* kNames[] = { "Threshold", "Range", "Ratio", "Attack", "Hold", "Release", "Hysteresis", "Lookahead", "Stereo Link" };
+static const char* kIds[]   = { "thr", "range", "ratio", "attack", "hold", "release", "hyst", "look", "link", "schps", "sclps" };
+static const char* kNames[] = { "Threshold", "Range", "Ratio", "Attack", "Hold", "Release", "Hysteresis", "Lookahead", "Stereo Link", "SC HP Slope", "SC LP Slope" };
 
 void GateEditor::Laf::drawLabel (juce::Graphics& g, juce::Label& l)
 {
@@ -115,12 +115,13 @@ public:
         // curva (lo que "oye" el detector)
         const auto st = settings();
         const double fs = proc.currentSampleRate.load();
+        titg::ScCurve sc; sc.set (st, fs);                 // los filtros se calculan una vez por dibujo, no por punto
         juce::Path curve;
         const int steps = juce::jmax (2, (int) (r.getWidth() / 2));
         for (int i = 0; i <= steps; ++i)
         {
             const float x = r.getX() + r.getWidth() * (float) i / (float) steps;
-            const float y = dbToY ((float) juce::jlimit (-kRange * 1.5, kRange * 1.5, titg::scResponseDb (st, (double) xToFreq (x), fs)));
+            const float y = dbToY ((float) juce::jlimit (-kRange * 1.5, kRange * 1.5, sc.db ((double) xToFreq (x))));
             if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
         }
         g.setColour (kPink.withAlpha (st.eqOn ? 0.25f : 0.12f)); g.strokePath (curve, juce::PathStrokeType (7.f * s));
@@ -167,15 +168,29 @@ public:
         const int n = nodeAt (e.position);
         if (n < 0) return;
         begin (n);
-        if (n == 0) setParam ("schp", 20.f);
-        else if (n == 1) setParam ("sclp", 20000.f);
+        if (n == 0) { setParam ("schp", 20.f); setParam ("schps", 12.f); }
+        else if (n == 1) { setParam ("sclp", 20000.f); setParam ("sclps", 12.f); }
         else setParam (juce::String ("eg") + juce::String (n - 1), 0.f);
         end (n);
     }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
         const int n = nodeAt (e.position);
-        if (n < 2) return;
+        if (n < 0) return;
+        if (n < 2)      // rueda sobre HP / LP: cambia su pendiente de 6 en 6 dB/oct (como el mando de Slope de TIT Q)
+        {
+            if (w.deltaY == 0.f) return;
+            const char* sid = n == 0 ? "schps" : "sclps";
+            if (auto* p = proc.apvts.getParameter (sid))
+            {
+                const float v = proc.apvts.getRawParameterValue (sid)->load();
+                const float nv = juce::jlimit (6.f, 96.f, (float) (std::round (v / 6.f) * 6.f) + (w.deltaY > 0.f ? 6.f : -6.f));
+                p->beginChangeGesture();
+                p->setValueNotifyingHost (p->convertTo0to1 (nv));
+                p->endChangeGesture();
+            }
+            return;
+        }
         const auto id = juce::String ("eq") + juce::String (n - 1);
         if (auto* p = proc.apvts.getParameter (id))
         {
@@ -206,6 +221,7 @@ private:
     {
         titg::Settings s;
         s.hpHz = raw ("schp"); s.lpHz = raw ("sclp"); s.eqOn = raw ("sceq") > 0.5f;
+        s.hpSlope = raw ("schps"); s.lpSlope = raw ("sclps");
         for (int i = 0; i < 3; ++i)
         {
             const auto k = juce::String (i + 1);
@@ -233,8 +249,8 @@ private:
     }
     juce::StringArray idsOf (int n) const
     {
-        if (n == 0) return { "schp" };
-        if (n == 1) return { "sclp" };
+        if (n == 0) return { "schp", "schps" };
+        if (n == 1) return { "sclp", "sclps" };
         const auto k = juce::String (n - 1);
         return { "ef" + k, "eg" + k };
     }
