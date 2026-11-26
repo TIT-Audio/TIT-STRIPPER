@@ -239,6 +239,7 @@ void StripEditor::showPresetMenu()
     }
     m.addSubMenu ("Start order for new instances", startMenu);
     m.addItem (5, "Use the current order as start order");
+    m.addItem (7, "Color on at start (new instances)", true, titc::colorDefault());
     m.addItem (6, "Open the settings file (config.txt)");
     juce::Component::SafePointer<StripEditor> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (menuBtn), [safe] (int r)
@@ -253,6 +254,7 @@ void StripEditor::showPresetMenu()
             for (int i = 0; i < 6; ++i) if (StripProcessor::orders()[(size_t) i] == o) { StripProcessor::saveConfiguredOrderIndex (i); break; }
             return;
         }
+        if (r == 7) { titc::saveColorDefault (! titc::colorDefault()); return; }
         if (r == 6) { if (! StripProcessor::configFile().existsAsFile()) StripProcessor::saveConfiguredOrderIndex (0); StripProcessor::configFile().revealToUser(); return; }
         const bool saving = (r == 1);
         safe->chooser = std::make_unique<juce::FileChooser> (saving ? "Save preset" : "Load preset", presetDir(), "*.titstrip");

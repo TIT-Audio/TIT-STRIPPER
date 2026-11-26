@@ -21,6 +21,7 @@ jobs:
       - run: g++ -std=c++17 -O2 -Wall tests/linphase_test.cpp -o linphase_test && ./linphase_test
       - run: g++ -std=c++17 -O1 -Wall tests/gate_test.cpp -o gate_test && ./gate_test
       - run: g++ -std=c++17 -O1 -Wall tests/config_test.cpp -o config_test && ./config_test
+      - run: g++ -std=c++17 -O1 -Wall tests/titconfig_test.cpp -o titconfig_test && ./titconfig_test
 
   build:
     name: build (${{ matrix.id }})

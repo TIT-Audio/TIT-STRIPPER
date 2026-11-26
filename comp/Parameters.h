@@ -21,4 +21,9 @@ inline const juce::StringArray& modeNames()
 inline juce::String pid (int band, const char* name) { return "b" + juce::String (band + 1) + "_" + name; }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+
+// Archivo de configuracion <datos de usuario>/TIT Audio/<nombre del plugin>/config.txt (lo comparten TIT COMP y TIT STRIPPER con su propia carpeta)
+juce::File configFile();
+bool colorDefault();               // "color = on/off": estado del boton Color en una instancia nueva (por defecto on)
+void saveColorDefault (bool on);
 } // namespace titc

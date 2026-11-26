@@ -23,6 +23,8 @@ int main()
         check (parseOrderIndex (s) == (int) i, "las 6 permutaciones");
     }
     for (int i = 0; i < 6; ++i) check (parseOrderIndex (textForOrder (i)) == i, "texto generado -> mismo orden");
+    check (titcfg::getValue (textForOrder (3, "color = off\n"), "color") == "off", "cambiar el orden conserva color");
+    check (titcfg::getValue (defaultText(), "color") == "on", "color por defecto on");
     check (textForOrder (4).find ("order = EQ, GATE, COMP") != std::string::npos, "texto con EQ primero");
     if (! fails) std::printf ("Todas las pruebas de configuracion han pasado.\n");
     return fails;

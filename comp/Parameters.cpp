@@ -1,7 +1,28 @@
 #include "Parameters.h"
+#include "TitConfig.h"
 
 namespace titc
 {
+juce::File configFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("TIT Audio").getChildFile (JucePlugin_Name).getChildFile ("config.txt");
+}
+
+bool colorDefault()
+{
+    const auto f = configFile();
+    return f.existsAsFile() ? titcfg::parseOnOff (titcfg::getValue (f.loadFileAsString().toStdString(), "color"), true) : true;
+}
+
+void saveColorDefault (bool on)
+{
+    const auto f = configFile();
+    f.getParentDirectory().createDirectory();
+    const std::string old = f.existsAsFile() ? f.loadFileAsString().toStdString() : std::string();
+    f.replaceWithText (juce::String (titcfg::setValue (old, "color", on ? "on" : "off")));
+}
+
 static juce::String trimNum (float v, int maxDecimals)
 {
     juce::String t (v, maxDecimals);
@@ -55,7 +76,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (makeFloat ("attack",  "Attack",     0.01f, 250.f,  10.f, 5.f,   "ms",  2, 0.f));
     layout.add (makeFloat ("release", "Release",    5.f, 5000.f,  120.f, 150.f, "ms",  2, 0.f));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "autorel", 1 }, "Auto Release", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "color", 1 }, "Color", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "color", 1 }, "Color", colorDefault()));
     layout.add (makeFloat ("fin",     "FET Input",   0.f, 48.f,   12.f, 0.f,   "",    1, 0.1f));
     layout.add (makeFloat ("fout",    "FET Output",  0.f, 48.f,   29.f, 0.f,   "",    1, 0.1f));
     layout.add (makeFloat ("pr",      "Peak Reduction", 0.f, 100.f, 40.f, 0.f,  "",    1, 0.1f));

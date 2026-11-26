@@ -31,5 +31,8 @@ El orden de los módulos con el que arranca una instancia nueva se guarda en `co
 Se cambia desde el menú `...` → "Start order for new instances" / "Use the current order as start order", o editando el archivo:
 
     order = EQ, GATE, COMP
+    color = on
+
+`color` (on/off) es el estado del botón Color del compresor al arrancar una instancia nueva; también se cambia desde el menú `...` → "Color on at start".
 
 Los proyectos ya guardados conservan su propio orden.

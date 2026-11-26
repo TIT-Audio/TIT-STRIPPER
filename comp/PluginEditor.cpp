@@ -817,11 +817,16 @@ void TitCompEditor::showPresetMenu()
     m.addItem (1, "Save preset to a file...");
     m.addItem (2, "Load preset from a file...");
     m.addItem (3, "Open the presets folder");
+    m.addSeparator();
+    m.addItem (4, "Color on at start (new instances)", true, colorDefault());
+    m.addItem (5, "Open the settings file (config.txt)");
     juce::Component::SafePointer<TitCompEditor> safe (this);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (presetMenuBtn), [safe] (int r)
     {
         if (safe == nullptr || r == 0) return;
         if (r == 3) { presetDir().createDirectory(); presetDir().revealToUser(); return; }
+        if (r == 4) { saveColorDefault (! colorDefault()); return; }
+        if (r == 5) { if (! configFile().existsAsFile()) saveColorDefault (colorDefault()); configFile().revealToUser(); return; }
         const bool saving = (r == 1);
         safe->chooser = std::make_unique<juce::FileChooser> (saving ? "Save preset" : "Load preset", presetDir(), "*.titc");
         const int flags = saving ? (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting)

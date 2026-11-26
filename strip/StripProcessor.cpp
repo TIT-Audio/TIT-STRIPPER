@@ -9,18 +9,15 @@ const std::array<std::array<int, 3>, 6>& StripProcessor::orders()
 }
 
 // Archivo de configuracion: <datos de usuario>/TIT Audio/TIT STRIPPER/config.txt (se crea la primera vez con el orden por defecto)
-juce::File StripProcessor::configFile()
-{
-    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("TIT Audio").getChildFile ("TIT STRIPPER").getChildFile ("config.txt");
-}
+juce::File StripProcessor::configFile() { return titc::configFile(); }
 
 int StripProcessor::configuredOrderIndex()
 {
     const auto file = configFile();
     if (! file.existsAsFile())
     {
-        saveConfiguredOrderIndex (0);
+        file.getParentDirectory().createDirectory();
+        file.replaceWithText (juce::String (stripcfg::defaultText()));
         return 0;
     }
     return stripcfg::parseOrderIndex (file.loadFileAsString().toStdString());
@@ -30,7 +27,8 @@ void StripProcessor::saveConfiguredOrderIndex (int idx)
 {
     const auto file = configFile();
     file.getParentDirectory().createDirectory();
-    file.replaceWithText (juce::String (stripcfg::textForOrder (idx)));
+    const std::string old = file.existsAsFile() ? file.loadFileAsString().toStdString() : std::string();
+    file.replaceWithText (juce::String (stripcfg::textForOrder (idx, old)));
 }
 
 static juce::AudioProcessorValueTreeState::ParameterLayout createStripLayout()
