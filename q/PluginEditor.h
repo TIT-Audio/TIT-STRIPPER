@@ -110,14 +110,14 @@ private:
     double viewFs = 44100.0;     // frecuencia de muestreo real del filtrado (con oversampling) para dibujar la curva
 
     // globales
-    juce::ComboBox osBox, dbBox;
+    juce::ComboBox osBox, dbBox, phaseBox, lpqBox;
     juce::TextButton settingsBtn { "Settings" };
     juce::ComboBox eqPresetBox;
     juce::TextButton eqSaveBtn { "Save" }, eqDelBtn { "Delete" }, eqMenuBtn { "..." };
     std::unique_ptr<juce::FileChooser> chooser;
     juce::Slider outSlider;
     juce::Label outLabel;
-    std::unique_ptr<ComboAtt> osAtt, dbAtt;
+    std::unique_ptr<ComboAtt> osAtt, dbAtt, phaseAtt, lpqAtt;
     std::unique_ptr<SliderAtt> outAtt;
 
     // banda seleccionada

@@ -24,6 +24,8 @@ TitQProcessor::TitQProcessor()
     for (auto& a : dynAmount) a.store (0.f);
     osParam  = apvts.getRawParameterValue ("os");
     outParam = apvts.getRawParameterValue ("out");
+    phaseParam = apvts.getRawParameterValue ("phase");
+    lpqParam   = apvts.getRawParameterValue ("lpq");
 
     // preset de clics marcado como Default (si algo falla, valores de fábrica)
     clickConfig = ClickConfig::loadDefault (clickPresetName);
@@ -73,6 +75,22 @@ void TitQProcessor::prepareToPlay (double sampleRate, int)
         b.sFreq = -1.0; b.sType = -1;
     }
     setOversampling ((int) std::lround (osParam->load()));
+
+    // fase lineal: el motor reserva su memoria aquí; en modo Linear la latencia es la de su filtro
+    lpEngine.prepare (sampleRate);
+    for (auto& v : soloRing) v.assign ((size_t) lpLatency (3, sampleRate) + kSoloChunk + 8, 0.f);
+    soloWrite = 0;
+    linearActive = phaseParam->load() > 0.5f;
+    if (linearActive) enterLinear (juce::jlimit (0, 3, (int) std::lround (lpqParam->load())));
+    else tailSeconds.store (0.0);
+}
+
+void TitQProcessor::enterLinear (int quality)
+{
+    lpEngine.setQuality (quality);
+    const int lat = lpEngine.latencySamples();
+    setLatencySamples (lat);
+    tailSeconds.store ((double) lat / std::max (1.0, currentSampleRate.load()));
 }
 
 void TitQProcessor::setOversampling (int idx)
@@ -217,7 +235,8 @@ void TitQProcessor::updateBands (const float* intL, const float* intR, const flo
 
         BandSettings eff;
         const double scale = applyDynamics (sm, dynOn, rangeDb, (double) rt.amount, eff);
-        if (rt.lastDyn < 0.0 || eff != rt.last || scale != rt.lastDyn)
+        rt.effNow = eff; rt.scaleNow = scale;
+        if (! linearActive && (rt.lastDyn < 0.0 || eff != rt.last || scale != rt.lastDyn))
         {
             rt.eq.design (eff, osFs, scale);
             rt.last = eff;
@@ -286,7 +305,27 @@ void TitQProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
     if (numCh == 0 || total == 0) return;
 
     const int osIdx = juce::jlimit (0, 3, (int) std::lround (osParam->load()));
-    if (osIdx != currentOs) setOversampling (osIdx);
+    const int lpq = juce::jlimit (0, 3, (int) std::lround (lpqParam->load()));
+    if (phaseParam->load() > 0.5f)
+    {
+        if (! linearActive)
+        {
+            linearActive = true;
+            lpEngine.reset();
+            for (auto& v : soloRing) std::fill (v.begin(), v.end(), 0.f);
+            enterLinear (lpq);
+        }
+        else if (lpq != lpEngine.getQuality())
+            enterLinear (lpq);
+    }
+    else if (linearActive)
+    {
+        linearActive = false;
+        tailSeconds.store (0.0);
+        setOversampling (osIdx);                    // vuelve a los filtros normales (y a su latencia)
+    }
+    else if (osIdx != currentOs)
+        setOversampling (osIdx);
 
     // sidechain externo: una sola entrada por instancia, compartida por todas las bandas que la elijan
     auto* scBus = getBus (true, 1);
@@ -305,6 +344,79 @@ void TitQProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
 
     const double fs = currentSampleRate.load();
     const float newOutGain = juce::Decibels::decibelsToGain (outParam->load());
+
+    // filtro de paso de banda del solo (frecuencia y Q de la banda en solo)
+    auto prepareSolo = [&]
+    {
+        const auto s = readBandSettings (soloBand);
+        const double f = juce::jlimit (20.0, 0.49 * fs, (double) s.freq);
+        double q = 0.5;
+        if (s.type == APTIT)
+            q = juce::jlimit (0.3, 10.0, apTitQ ((double) s.gain));
+        else if (s.type == Bell || s.type == SLTIT || s.type == BIGTIT)
+            q = juce::jlimit (0.3, 10.0, s.type == BIGTIT ? kBigTitQ + 0.3 : (double) s.q);
+        if (f != soloF || q != soloQ) { soloFilter.set (Biquad::bandpass (fs, f, q)); soloF = f; soloQ = q; }
+    };
+
+    if (linearActive)
+    {
+        // 1) dinámica y detectores sobre la entrada, trozo a trozo (la señal aún no se ha tocado)
+        for (int pos = 0; pos < total; pos += kChunk)
+        {
+            const int n = std::min (kChunk, total - pos);
+            const float* extL = nullptr; const float* extR = nullptr;
+            if (extAvailable && sc.getNumChannels() > 0)
+            {
+                extL = sc.getReadPointer (0) + pos;
+                extR = (sc.getNumChannels() > 1 ? sc.getReadPointer (1) : sc.getReadPointer (0)) + pos;
+            }
+            updateBands (main.getReadPointer (0) + pos, (numCh > 1 ? main.getReadPointer (1) : main.getReadPointer (0)) + pos, extL, extR, n);
+        }
+
+        // 2) estado de las bandas -> filtro nuevo (se diseña en otro hilo y entra con un fundido)
+        LpSnapshot snap;
+        for (int b = 0; b < kNumBands; ++b)
+        {
+            const auto& rt = bands[(size_t) b];
+            if (rt.fade <= 0.f) continue;
+            auto& e = snap.band[(size_t) b];
+            e.active = true; e.eff = rt.effNow; e.scale = rt.scaleNow; e.fade = rt.fade; e.chmode = numCh == 2 ? rt.chmode : 0;
+        }
+        lpEngine.update (snap, total, isNonRealtime());
+
+        // 3) convolución (en trozos para el solo, que necesita la entrada retrasada)
+        const int delay = lpEngine.latencySamples();
+        const int ring = (int) soloRing[0].size();
+        float* wl = main.getWritePointer (0);
+        float* wr = numCh > 1 ? main.getWritePointer (1) : nullptr;
+        if (soloBand >= 0) prepareSolo();
+
+        for (int off = 0; off < total; off += kSoloChunk)
+        {
+            const int n = std::min (kSoloChunk, total - off);
+            for (int i = 0; i < n; ++i)
+            {
+                const int w = (soloWrite + i) % ring;
+                soloRing[0][(size_t) w] = wl[off + i];
+                if (numCh > 1) soloRing[1][(size_t) w] = wr[off + i];
+            }
+            lpEngine.process (wl + off, wr != nullptr ? wr + off : nullptr, numCh, n);
+            if (soloBand >= 0)
+                for (int ch = 0; ch < numCh; ++ch)
+                {
+                    float* d = main.getWritePointer (ch) + off;
+                    for (int i = 0; i < n; ++i)
+                        d[i] = soloRing[(size_t) ch][(size_t) (((soloWrite + i - delay) % ring + ring) % ring)];
+                    soloFilter.process (d, n, ch);
+                }
+            soloWrite = (soloWrite + n) % ring;
+        }
+
+        main.applyGainRamp (0, total, lastOutGain, newOutGain);
+        lastOutGain = newOutGain;
+        analyzerPost.push (main.getReadPointer (0), numCh > 1 ? main.getReadPointer (1) : main.getReadPointer (0), total);
+        return;
+    }
 
     int pos = 0;
     while (pos < total)
@@ -340,14 +452,7 @@ void TitQProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
 
         if (soloBand >= 0)
         {
-            const auto s = readBandSettings (soloBand);
-            const double f = juce::jlimit (20.0, 0.49 * fs, (double) s.freq);
-            double q = 0.5;
-            if (s.type == APTIT)
-                q = juce::jlimit (0.3, 10.0, apTitQ ((double) s.gain));
-            else if (s.type == Bell || s.type == SLTIT || s.type == BIGTIT)
-                q = juce::jlimit (0.3, 10.0, s.type == BIGTIT ? kBigTitQ + 0.3 : (double) s.q);
-            if (f != soloF || q != soloQ) { soloFilter.set (Biquad::bandpass (fs, f, q)); soloF = f; soloQ = q; }
+            prepareSolo();
             for (int ch = 0; ch < numCh; ++ch)
             {
                 main.copyFrom (ch, pos, dryChunk, ch, 0, n);

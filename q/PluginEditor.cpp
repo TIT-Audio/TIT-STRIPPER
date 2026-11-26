@@ -372,6 +372,17 @@ TitQEditor::TitQEditor (TitQProcessor& p) : AudioProcessorEditor (&p), proc (p)
     osBox.addItemList (juce::StringArray { "OS: Off", "OS: 2x", "OS: 4x", "OS: 8x" }, 1);
     addAndMakeVisible (osBox);
     osAtt = std::make_unique<ComboAtt> (proc.apvts, "os", osBox);
+    osBox.setTooltip ("Oversampling (only in Minimum phase mode)");
+
+    // fase: Minimum (filtros normales) o Linear (sin desfase, con latencia). La calidad fija la longitud del filtro lineal.
+    phaseBox.addItemList (juce::StringArray { "Phase: Min", "Phase: Linear" }, 1);
+    phaseBox.setTooltip ("Minimum: normal filters, no latency.  Linear: no phase shift, adds latency (reported to the host)");
+    addAndMakeVisible (phaseBox);
+    phaseAtt = std::make_unique<ComboAtt> (proc.apvts, "phase", phaseBox);
+    lpqBox.addItemList (juce::StringArray { "Low", "Medium", "High", "Max" }, 1);
+    lpqBox.setTooltip ("Linear phase quality: a longer filter is more precise in the bass but adds more latency");
+    addAndMakeVisible (lpqBox);
+    lpqAtt = std::make_unique<ComboAtt> (proc.apvts, "lpq", lpqBox);
 
     {   // selector de escala de dB (esquina superior derecha): ±3 ... ±12 dB
         const juce::String pm { juce::CharPointer_UTF8 ("\xc2\xb1") };
@@ -747,8 +758,12 @@ void TitQEditor::timerCallback()
     }
 
     // la curva se evalúa a la frecuencia de muestreo real del filtrado (con oversampling), igual que el audio
+    // (en fase lineal el filtro se calcula a 4x, sin la deformación del bilineal cerca de Nyquist)
     const int osIdx = juce::jlimit (0, 3, (int) std::lround (proc.apvts.getRawParameterValue ("os")->load()));
-    viewFs = proc.currentSampleRate.load() * (double) (1 << osIdx);
+    const bool linear = proc.apvts.getRawParameterValue ("phase")->load() > 0.5f;
+    viewFs = proc.currentSampleRate.load() * (linear ? 4.0 : (double) (1 << osIdx));
+    osBox.setEnabled (! linear);
+    lpqBox.setEnabled (linear);
 
     for (int b = 0; b < kNumBands; ++b)
     {
@@ -1281,15 +1296,17 @@ void TitQEditor::resized()
     scale = getWidth() / 1100.0;
     auto S = [this] (int v) { return juce::roundToInt ((double) v * scale); };
 
-    osBox.setBounds (S (40), S (12), S (100), S (26));
-    outLabel.setBounds (S (160), S (12), S (36), S (26));
-    outSlider.setBounds (S (196), S (12), S (260), S (26));
-    settingsBtn.setBounds (S (470), S (12), S (90), S (26));
-    eqPresetBox.setBounds (S (572), S (12), S (150), S (26));
-    eqSaveBtn.setBounds   (S (726), S (12), S (62),  S (26));
-    eqDelBtn.setBounds    (S (792), S (12), S (72),  S (26));
-    eqMenuBtn.setBounds   (S (868), S (12), S (40),  S (26));
-    dbBox.setBounds (S (950), S (12), S (110), S (26));   // selector de escala de dB: esquina superior derecha
+    osBox.setBounds (S (40), S (12), S (96), S (26));
+    outLabel.setBounds (S (146), S (12), S (36), S (26));
+    outSlider.setBounds (S (182), S (12), S (170), S (26));
+    phaseBox.setBounds (S (362), S (12), S (112), S (26));
+    lpqBox.setBounds (S (478), S (12), S (84), S (26));
+    settingsBtn.setBounds (S (572), S (12), S (84), S (26));
+    eqPresetBox.setBounds (S (664), S (12), S (136), S (26));
+    eqSaveBtn.setBounds   (S (804), S (12), S (58),  S (26));
+    eqDelBtn.setBounds    (S (866), S (12), S (66),  S (26));
+    eqMenuBtn.setBounds   (S (936), S (12), S (36),  S (26));
+    dbBox.setBounds (S (980), S (12), S (100), S (26));   // selector de escala de dB: esquina superior derecha
 
     for (int i = 0; i < kNumBands; ++i)
         bandButtons[(size_t) i].setBounds (S (44 + i * 46), S (304), S (42), S (26));

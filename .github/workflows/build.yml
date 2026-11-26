@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: g++ -std=c++17 -O1 -Wall tests/comp_core_test.cpp -o comp_test && ./comp_test
       - run: g++ -std=c++17 -O1 -Wall tests/eq_test.cpp -o eq_test && ./eq_test
+      - run: g++ -std=c++17 -O2 -Wall tests/linphase_test.cpp -o linphase_test && ./linphase_test
       - run: g++ -std=c++17 -O1 -Wall tests/gate_test.cpp -o gate_test && ./gate_test
 
   build:

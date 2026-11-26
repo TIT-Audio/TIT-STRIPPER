@@ -4,6 +4,7 @@
 #include "Parameters.h"
 #include "SpectrumAnalyzer.h"
 #include "ClickConfig.h"
+#include "LinearPhaseEngine.h"
 
 class TitQProcessor : public juce::AudioProcessor
 {
@@ -22,7 +23,7 @@ public:
     const juce::String getName() const override { return "TIT Q"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return tailSeconds.load(); }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -49,6 +50,7 @@ public:
 
 private:
     static constexpr int kChunk = 32; // el EQ dinámico actualiza coeficientes cada 32 muestras
+    static constexpr int kSoloChunk = 4096;   // trozo máximo del solo en fase lineal (tamaño de reserva del anillo)
 
     struct ParamPtrs
     {
@@ -70,6 +72,8 @@ private:
         double sFreq = -1.0, sSlope = 0.0;                  // frecuencia y pendiente suavizadas (filtros de corte)
         int sType = -1;
         int chmode = 0;                                     // 0 Stereo, 1 Mid, 2 Side, 3 Left, 4 Right
+        titq::BandSettings effNow;                          // ajustes con la dinámica aplicada (los usa la fase lineal)
+        double scaleNow = 1.0;
     };
 
     void setOversampling (int index);
@@ -78,7 +82,7 @@ private:
 
     std::array<ParamPtrs, titq::kNumBands> ptrs {};
     std::array<BandRuntime, titq::kNumBands> bands;
-    std::atomic<float> *osParam = nullptr, *outParam = nullptr;
+    std::atomic<float> *osParam = nullptr, *outParam = nullptr, *phaseParam = nullptr, *lpqParam = nullptr;
 
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
     int currentOs = 0, osFactor = 1;
@@ -87,6 +91,14 @@ private:
     double soloF = -1.0, soloQ = -1.0;
     juce::AudioBuffer<float> dryChunk;
     float lastOutGain = 1.f;
+
+    // fase lineal
+    void enterLinear (int quality);
+    titq::LinearPhaseEngine lpEngine;
+    bool linearActive = false;                       // solo se toca desde el hilo de audio (y prepareToPlay)
+    std::atomic<double> tailSeconds { 0.0 };
+    std::array<std::vector<float>, 2> soloRing;      // entrada retrasada para el solo en fase lineal
+    int soloWrite = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TitQProcessor)
 };

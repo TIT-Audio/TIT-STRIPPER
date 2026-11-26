@@ -42,6 +42,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     // ---- Globales ----
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "os", 1 }, "Oversampling",
                 juce::StringArray { "Off", "2x", "4x", "8x" }, 0));
+    // fase: Minimum (filtros normales, con oversampling opcional) o Linear (FIR sin desfase, con latencia; la calidad fija la longitud)
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "phase", 1 }, "Phase",
+                juce::StringArray { "Minimum", "Linear" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "lpq", 1 }, "Linear Phase Quality",
+                juce::StringArray { "Low", "Medium", "High", "Max" }, 1));
     layout.add (makeFloat ("out", "Output", -24.f, 24.f, 0.f, 0.f, "dB", 3, 0.01f));
 
     // escala de dB simétrica de la gráfica: ±3 ... ±12 dB (por defecto ±6)
